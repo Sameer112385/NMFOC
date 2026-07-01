@@ -341,7 +341,8 @@ export function DashboardClientWorkspace({
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          {/* YTD Performance Metrics Row */}
+          <div className="grid gap-4 xl:grid-cols-3">
             <div className="surface-card p-5">
               <h3 className="text-base font-semibold text-text">Project-to-Date</h3>
               <div className="mt-4 space-y-1">
@@ -352,6 +353,69 @@ export function DashboardClientWorkspace({
                 <StatRow label="Current month revenue recognition" value={formatCurrency(currentMonthRevenue)} />
               </div>
             </div>
+
+            <div className="surface-card p-5">
+              <h3 className="text-base font-semibold text-text">YTD Performance</h3>
+              <div className="mt-4 space-y-1">
+                {(() => {
+                  // Filter gr55Rows for YTD actuals that match the current WBS codes filter
+                  const currentYearString = new Date().getFullYear().toString();
+                  
+                  // Filter to matched WBS set
+                  const matchedGr55 = gr55Rows.filter((row) => {
+                    // Match selected WBS filter
+                    if (selectedWbs.length > 0) {
+                      const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+                      const match = selectedWbs.some((f) => {
+                        const fNorm = f.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+                        return rowNorm.startsWith(fNorm);
+                      });
+                      if (!match) return false;
+                    }
+                    // Match selected PO filter
+                    if (wbsCodesForSelectedPo) {
+                      const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+                      if (!wbsCodesForSelectedPo.has(rowNorm)) return false;
+                    }
+                    // Date must be this calendar year
+                    const yr = row.posting_date ? row.posting_date.slice(0, 4) : "";
+                    return yr === currentYearString;
+                  });
+
+                  // Accumulate category totals
+                  let subconTotal = 0;
+                  let materialTotal = 0;
+                  let manpowerTotal = 0;
+
+                  matchedGr55.forEach((row) => {
+                    const cat = String(row.cost_category || "").toLowerCase();
+                    const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+                    const amt = row.amount || 0;
+
+                    if (btx === "COIE") {
+                      materialTotal += amt;
+                    } else if (cat.includes("subcontract")) {
+                      subconTotal += amt;
+                    } else if (cat.includes("material") || cat.includes("consumable") || cat.includes("transportation") || cat.includes("transp")) {
+                      materialTotal += amt;
+                    } else if (cat.includes("labour") || cat.includes("labor") || cat.includes("manpower") || cat.includes("time cost") || cat.includes("hour")) {
+                      manpowerTotal += amt;
+                    }
+                  });
+
+                  return (
+                    <>
+                      <StatRow label="YTD Actual cost" value={formatCurrency(ytdActual)} />
+                      <StatRow label="YTD Revenue" value={formatCurrency(ytdRevenue)} />
+                      <StatRow label="YTD Subcon Cost" value={formatCurrency(subconTotal)} />
+                      <StatRow label="YTD Material Cost" value={formatCurrency(materialTotal)} />
+                      <StatRow label="YTD Manpower Cost" value={formatCurrency(manpowerTotal)} />
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
             <div className="surface-card p-5">
               <h3 className="text-base font-semibold text-text">Period Rollups</h3>
               <div className="mt-4 space-y-1">

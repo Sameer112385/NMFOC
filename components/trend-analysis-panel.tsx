@@ -59,6 +59,42 @@ const chartTooltipStyle = {
   fontFamily: "Inter, sans-serif",
 };
 
+const CustomChartTooltip = ({ active, payload, label, formatter, labelFormatter }: any) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const activeItems = payload.filter((item: any) => item.value !== undefined && item.value !== null && Number(item.value) !== 0);
+  if (activeItems.length === 0) return null;
+
+  const formattedLabel = labelFormatter ? labelFormatter(label) : label;
+  const isMultiCol = activeItems.length > 8;
+
+  return (
+    <div className="rounded-2xl border border-line bg-panel/95 p-3.5 shadow-xl backdrop-blur-sm font-sans text-xs max-w-[540px]">
+      <p className="font-bold text-text mb-2 border-b border-line/45 pb-1">{formattedLabel}</p>
+      <div className={isMultiCol ? "grid grid-cols-2 gap-x-6 gap-y-0.5 max-h-[85vh] overflow-y-auto pr-1" : "space-y-1"}>
+        {activeItems.map((item: any, index: number) => {
+          const formatted = formatter ? formatter(item.value, item.name, item) : null;
+          const displayVal = formatted
+            ? (Array.isArray(formatted) ? formatted[0] : formatted)
+            : (item.value >= 0 || item.value < 0 ? String(item.value) : ""); // Safe fallback
+
+          const nameLabel = formatted && Array.isArray(formatted) && formatted[1] ? formatted[1] : item.name;
+
+          return (
+            <div key={index} className="flex items-center gap-3 justify-between font-medium py-0.5 border-b border-line/5 last:border-b-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="inline-block h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color || item.fill }} />
+                <span className="text-muted truncate max-w-[150px] text-[10px]" title={nameLabel}>{nameLabel}</span>
+              </div>
+              <span className="font-mono font-bold text-text text-[10px] shrink-0">{displayVal}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const CATEGORY_COLORS = [
   "#3b82f6", // Blue
   "#10b981", // Emerald Green
@@ -229,16 +265,22 @@ export function TrendAnalysisPanel({
     // Apply specific view mode filters based on cost_category matching rules
     if (costViewMode === "subcontractor") {
       targetGr55 = targetGr55.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return false;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("subcontract");
       });
     } else if (costViewMode === "material") {
       targetGr55 = targetGr55.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return true;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("material") || cat.includes("consumable") || cat.includes("transportation") || cat.includes("transp");
       });
     } else if (costViewMode === "manpower") {
       targetGr55 = targetGr55.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return false;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("labour") || cat.includes("labor") || cat.includes("manpower") || cat.includes("time cost") || cat.includes("hour");
       });
@@ -428,68 +470,78 @@ export function TrendAnalysisPanel({
     return { uniquePOs, chartData, poTotals, grandTotal, poMeta };
   }, [gr55Rows, selectedWbs, wbsMaster, costElementControl, periodType, trendData, costViewMode, selectedPos]);
 
-  // KPI Calculations in the active range
+
+
+
+  // Filter costRows by selectedWbs codes and selectedPos to match WBS details table exactly
+  const filteredWbsRows = useMemo(() => {
+    const normalizeCodeLocal = (code: string) => code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    return costRows.filter((row) => {
+      // WBS filter
+      if (selectedWbs && selectedWbs.length > 0) {
+        const normCode = normalizeCodeLocal(row.wbs_code);
+        const match = selectedWbs.some((sel) => normCode.startsWith(normalizeCodeLocal(sel)));
+        if (!match) return false;
+      }
+
+      // PO filter
+      if (selectedPos && selectedPos.length > 0) {
+        const hasMatchingPo = gr55Rows.some(
+          (gr55) =>
+            normalizeCodeLocal(gr55.wbs_code) === normalizeCodeLocal(row.wbs_code) &&
+            gr55.purchasing_document &&
+            selectedPos.includes(gr55.purchasing_document),
+        );
+        if (!hasMatchingPo) return false;
+      }
+
+      return true;
+    });
+  }, [costRows, selectedWbs, selectedPos, gr55Rows]);
+
+  // KPI Calculations in the active range from the single source (revenue_wbs rows)
   const kpis = useMemo(() => {
-    if (!trendData.length) {
-      return {
-        totalActualCost: 0,
-        totalRecognizedRevenue: 0,
-        forecastCost: 0,
-        forecastRevenue: 0,
-        grossMargin: 0,
-        marginPercent: 0,
-        costGrowth: 0,
-        revenueGrowth: 0,
-        inMonthCost: 0,
-        inMonthRevenue: 0,
-        activePeriodLabel: "",
-        plannedCost: 0,
-        plannedRevenue: 0,
-        pocPercent: 0,
-      };
-    }
-
-    const latestPoint = trendData[trendData.length - 1]!;
-
-    const totalActualCost = trendData.reduce((sum, pt) => sum + pt.forecastCost, 0);
-    const totalRecognizedRevenue = trendData.reduce((sum, pt) => sum + pt.forecastRevenue, 0);
-    const totalForecastCost = totalActualCost;
-    const totalForecastRevenue = totalRecognizedRevenue;
-
-    const grossMargin = latestPoint.cumulativeForecastRevenue - latestPoint.cumulativeForecastCost;
-    const marginPercent = latestPoint.cumulativeForecastRevenue > 0
-      ? (grossMargin / latestPoint.cumulativeForecastRevenue) * 100
-      : 0;
-
-    // Use latest period PoP growth rates calculated by the trend engine
-    const costGrowth = latestPoint.costGrowthPercent;
-    const revenueGrowth = latestPoint.revenueGrowthPercent;
-
-    // In the Month calculations (latest point or selected period)
-    let activePoint = latestPoint;
-    if (selectedPeriod) {
-      const found = trendData.find((pt) => pt.period === selectedPeriod);
-      if (found) activePoint = found;
-    }
-
-    const inMonthCost = activePoint.forecastCost;
-    const inMonthRevenue = activePoint.forecastRevenue;
-    const activePeriodLabel = activePoint.period;
-
-    // Extract planned totals
-    const plannedCost = latestPoint.plannedCost ?? 0;
-    const plannedRevenue = latestPoint.plannedRevenue ?? 0;
-
-    // Calculate POC% based on Recognized Revenue / Planned Revenue
+    const plannedCost = filteredWbsRows.reduce((sum, r) => sum + (r.planned_cost ?? 0), 0);
+    const totalActualCost = filteredWbsRows.reduce((sum, r) => sum + (r.actual_cost_to_date ?? 0), 0);
+    const plannedRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.planned_revenue ?? 0), 0);
+    const totalRecognizedRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.recognized_revenue_to_date ?? 0), 0);
     const pocPercent = plannedRevenue > 0 ? Math.min(100, (totalRecognizedRevenue / plannedRevenue) * 100) : 0;
+
+    let costGrowth = 0;
+    let revenueGrowth = 0;
+    let inMonthCost = 0;
+    let inMonthRevenue = 0;
+    let activePeriodLabel = "";
+
+    if (trendData.length > 0) {
+      const latestPoint = trendData[trendData.length - 1]!;
+      costGrowth = latestPoint.costGrowthPercent;
+      revenueGrowth = latestPoint.revenueGrowthPercent;
+
+      // In the Month calculations (latest point or selected period)
+      let activePoint = latestPoint;
+      if (selectedPeriod) {
+        const found = trendData.find((pt) => pt.period === selectedPeriod);
+        if (found) activePoint = found;
+      }
+
+      inMonthCost = activePoint.forecastCost;
+      inMonthRevenue = activePoint.forecastRevenue;
+      activePeriodLabel = activePoint.period;
+    } else {
+      // Fallback in-month to MTD values from the single source
+      inMonthCost = filteredWbsRows.reduce((sum, r) => sum + (r.mtd_actual_cost ?? 0), 0);
+      inMonthRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.mtd_revenue_recognition ?? 0), 0);
+      activePeriodLabel = "Latest";
+    }
 
     return {
       totalActualCost,
       totalRecognizedRevenue,
-      forecastCost: totalForecastCost,
-      forecastRevenue: totalForecastRevenue,
-      grossMargin,
-      marginPercent,
+      forecastCost: totalActualCost,
+      forecastRevenue: totalRecognizedRevenue,
+      grossMargin: totalRecognizedRevenue - totalActualCost,
+      marginPercent: totalRecognizedRevenue > 0 ? ((totalRecognizedRevenue - totalActualCost) / totalRecognizedRevenue) * 100 : 0,
       costGrowth,
       revenueGrowth,
       inMonthCost,
@@ -499,7 +551,7 @@ export function TrendAnalysisPanel({
       plannedRevenue,
       pocPercent,
     };
-  }, [trendData, selectedPeriod]);
+  }, [filteredWbsRows, trendData, selectedPeriod]);
 
   const rawDrilldownData = useMemo(() => {
     if (!selectedPeriod && selectedPos.length === 0) return { sap: [], pm: [], wbs: [], category: [] };
@@ -557,16 +609,22 @@ export function TrendAnalysisPanel({
     // Apply specific view mode filters based on cost_category matching rules
     if (costViewMode === "subcontractor") {
       sapList = sapList.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return false;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("subcontract");
       });
     } else if (costViewMode === "material") {
       sapList = sapList.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return true;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("material") || cat.includes("consumable") || cat.includes("transportation") || cat.includes("transp");
       });
     } else if (costViewMode === "manpower") {
       sapList = sapList.filter((row) => {
+        const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+        if (btx === "COIE") return false;
         const cat = String(row.cost_category || "").toLowerCase();
         return cat.includes("labour") || cat.includes("labor") || cat.includes("manpower") || cat.includes("time cost") || cat.includes("hour");
       });
@@ -763,7 +821,8 @@ export function TrendAnalysisPanel({
     return formatCompactNumber(value);
   };
 
-  const formatTooltipValue = (value: number, name: string) => {
+  const formatTooltipValue = (value: number, name: string): any => {
+    if (value === 0) return null;
     const cleanName = name.toLowerCase();
     if (cleanName.includes("%") || cleanName.includes("growth")) {
       return [formatPercent(value), name];
@@ -1085,7 +1144,7 @@ export function TrendAnalysisPanel({
                     tickLine={false}
                     tickFormatter={formatYAxis}
                   />
-                  <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Area
                     type="monotone"
                     dataKey="cumulativeForecastCost"
@@ -1112,7 +1171,7 @@ export function TrendAnalysisPanel({
                     tickLine={false}
                     tickFormatter={formatYAxis}
                   />
-                  <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Area
                     type="monotone"
                     dataKey="forecastCost"
@@ -1172,7 +1231,7 @@ export function TrendAnalysisPanel({
                     tickLine={false}
                     tickFormatter={formatYAxis}
                   />
-                  <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Area
                     type="monotone"
                     dataKey="cumulativeForecastRevenue"
@@ -1199,7 +1258,7 @@ export function TrendAnalysisPanel({
                     tickLine={false}
                     tickFormatter={formatYAxis}
                   />
-                  <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Area
                     type="monotone"
                     dataKey="forecastRevenue"
@@ -1232,7 +1291,7 @@ export function TrendAnalysisPanel({
                   tickLine={false}
                   tickFormatter={formatYAxis}
                 />
-                <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                 <Legend verticalAlign="top" height={32} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 10 }} />
                 <Line
                   type="monotone"
@@ -1282,7 +1341,7 @@ export function TrendAnalysisPanel({
                   tickLine={false}
                   tickFormatter={formatYAxis}
                 />
-                <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                 <Legend verticalAlign="top" height={32} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 10 }} />
                 <Line
                   type="monotone"
@@ -1403,7 +1462,7 @@ export function TrendAnalysisPanel({
                       tickLine={false}
                       tickFormatter={formatYAxis}
                     />
-                    <Tooltip contentStyle={chartTooltipStyle} formatter={formatTooltipValue} />
+                    <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                     <Legend verticalAlign="top" height={36} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 9 }} />
                     {categoryTrendData.uniqueCategories.map((category, index) => (
                       <Bar
@@ -1457,13 +1516,16 @@ export function TrendAnalysisPanel({
                       }}
                     />
                     <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      formatter={formatTooltipValue}
-                      labelFormatter={(label) => {
-                        if (!categoryTrendData.isWbsGrouped) return label;
-                        const desc = wbsCodeToDescMap.get(String(label));
-                        return desc ? `${label} - ${desc}` : label;
-                      }}
+                      content={
+                        <CustomChartTooltip
+                          formatter={formatTooltipValue}
+                          labelFormatter={(label: any) => {
+                            if (!categoryTrendData.isWbsGrouped) return label;
+                            const desc = wbsCodeToDescMap.get(String(label));
+                            return desc ? `${label} - ${desc}` : label;
+                          }}
+                        />
+                      }
                     />
                     <Bar dataKey="value" name="Total Cost" radius={[0, 4, 4, 0]}>
                       {categoryTrendData.categoryTotals.map((entry, index) => (
@@ -1556,10 +1618,7 @@ export function TrendAnalysisPanel({
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
                     <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                     <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
-                    <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      formatter={(value: number, name: string) => [formatCurrency(value), name]}
-                    />
+                    <Tooltip content={<CustomChartTooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />} />
                     <Legend verticalAlign="top" height={36} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 9 }} />
                     {poPerformanceData.uniquePOs.map((po, index) => (
                       <Bar
@@ -1597,10 +1656,7 @@ export function TrendAnalysisPanel({
                       width={90}
                       tickFormatter={(tick: string) => (tick.length > 14 ? `${tick.slice(0, 14)}…` : tick)}
                     />
-                    <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      formatter={(value: number) => [formatCurrency(value), "Total Cost"]}
-                    />
+                    <Tooltip content={<CustomChartTooltip formatter={(value: number) => [formatCurrency(value), "Total Cost"]} />} />
                     <Bar dataKey="value" name="Total Cost" radius={[0, 4, 4, 0]}>
                       {poPerformanceData.poTotals.map((entry, index) => (
                         <Cell key={`po-cell-${index}`} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
@@ -1680,6 +1736,8 @@ export function TrendAnalysisPanel({
           </div>
         </div>
       )}
+
+
 
       {/* 4. Interactive Drill-Down Table */}
       <div className="rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">

@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, Download, LogOut, Menu, Search } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 export function Topbar({
@@ -22,7 +21,7 @@ export function Topbar({
     if (hasDemo) {
       setIsLoggedIn(true);
       return;
-      }
+    }
 
     const isSupabaseConfigured =
       Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
@@ -65,8 +64,9 @@ export function Topbar({
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line/40 bg-bg/80 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-line bg-panel shadow-[0_2px_12px_-2px_rgba(15,23,42,0.08)]">
       <div className="flex w-full items-center justify-between gap-4 px-6 py-4 md:px-8">
+        {/* Left — mobile hamburger + page title */}
         <div className="flex min-w-0 items-center gap-4">
           <button
             type="button"
@@ -77,23 +77,19 @@ export function Topbar({
             <Menu className="h-4 w-4" />
           </button>
           <div className="min-w-0">
-            <div className="text-[16px] font-extrabold tracking-tight text-text">{moduleName}</div>
+            <div className="flex items-center gap-2.5">
+              <span className="w-1 h-5 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500 flex-none" />
+              <div className="text-[16px] font-extrabold tracking-tight text-text">{moduleName}</div>
+            </div>
           </div>
         </div>
 
+        {/* Right — Log Out only */}
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2.5 rounded-xl border border-line/60 bg-panel px-4 py-2 text-xs text-muted/70 xl:flex w-72 transition hover:border-line hover:bg-panel/90 shadow-sm cursor-text">
-            <Search className="h-3.5 w-3.5 text-muted/50" />
-            <span>Search WBS, risks, uploads...</span>
-          </div>
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-xl border border-line/60 bg-panel text-muted/70 hover:text-text md:inline-flex hover:bg-panel2 transition shadow-sm" aria-label="Notifications">
-            <Bell className="h-4 w-4" />
-          </button>
-          <button type="button" className="hidden h-9 w-9 items-center justify-center rounded-xl border border-line/60 bg-panel text-muted/70 hover:text-text md:inline-flex hover:bg-panel2 transition shadow-sm" aria-label="Export">
-            <Download className="h-4 w-4" />
-          </button>
-          <ThemeToggle />
-          <Link href="/login" className="inline-flex items-center gap-2 rounded-xl border border-line/60 bg-panel px-4 py-2 text-xs font-semibold text-text hover:border-accent hover:text-accent hover:bg-accent/5 transition shadow-sm">
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 rounded-xl border border-line/60 bg-panel px-4 py-2 text-xs font-semibold text-text hover:border-accent hover:text-accent hover:bg-accent/5 transition shadow-sm"
+          >
             <LogOut className="h-3.5 w-3.5" />
             {isLoggedIn ? 'Log Out' : 'Login'}
           </Link>
@@ -102,4 +98,3 @@ export function Topbar({
     </header>
   );
 }
-

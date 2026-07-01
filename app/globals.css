@@ -6,44 +6,124 @@
 
 :root {
   color-scheme: light;
-  --color-bg: 248 250 252;
-  --color-panel: 255 255 255;
-  --color-panel-2: 241 245 249;
-  --color-line: 226 232 240;
-  --color-text: 15 23 42;
-  --color-muted: 71 85 105;
-  --color-accent: 37 99 235;
-  --color-warning: 217 119 6;
-  --color-danger: 225 29 72;
-  --color-success: 16 185 129;
+
+  /* ── Surface Hierarchy ──────────────────────────────────────────────────────
+     bg (page)  →  panel (sidebar/cards)  →  panel-2 (inputs/hover)
+     The 3-level system creates clear visual separation between layers.
+  */
+  --color-bg:      234 238 244;   /* Slate-200ish — the page canvas, clearly gray */
+  --color-panel:   255 255 255;   /* Pure white — sidebar, cards pop against bg */
+  --color-panel-2: 246 248 251;   /* Slightly off-white — hover states, inputs */
+  --color-line:    210 218 230;   /* Slate-300ish — clearly visible borders */
+  --color-text:    15 23 42;      /* Slate-900 — deep readable text */
+  --color-muted:   71 85 105;     /* Slate-600 — secondary labels */
+  --color-accent:  37 99 235;     /* Blue-600 — primary action color */
+  --color-warning: 217 119 6;     /* Amber-600 */
+  --color-danger:  225 29 72;     /* Rose-600 */
+  --color-success: 16 185 129;    /* Emerald-500 */
+
+  /* Page background — distinctly blue-indigo tinted, not just gray */
   --page-bg:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.05), transparent 25%),
-    radial-gradient(circle at top right, rgba(16, 185, 129, 0.04), transparent 20%),
-    linear-gradient(180deg, #f8fafc, #f1f5f9);
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(226, 232, 240, 0.8);
-  --shadow-panel: 0 12px 24px -4px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.02);
+    radial-gradient(ellipse at 0% 0%, rgba(99, 102, 241, 0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(16, 185, 129, 0.07) 0%, transparent 45%),
+    radial-gradient(ellipse at 60% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 40%),
+    linear-gradient(160deg, #e2e8f4 0%, #d8e0ef 100%);
+
+  --glass-bg:      rgba(255, 255, 255, 0.90);
+  --glass-border:  rgba(210, 218, 230, 0.90);
+
+  /* Layered shadows — give cards real depth on the gray background */
+  --shadow-sm:     0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-panel:  0 4px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-float:  0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
 }
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --color-bg: 11 15 26;
-  --color-panel: 20 27 45;
-  --color-panel-2: 28 37 59;
-  --color-line: 38 48 74;
-  --color-text: 241 245 249;
-  --color-muted: 148 163 184;
-  --color-accent: 96 165 250;
-  --color-warning: 251 191 36;
-  --color-danger: 251 113 133;
-  --color-success: 52 211 153;
+
+  /* ── Dark Surface Hierarchy ─────────────────────────────────────────────────
+     Each level is clearly distinct — 3 visible tiers of depth.
+  */
+  --color-bg:      9 13 24;       /* Deep navy-black — the void behind everything */
+  --color-panel:   17 25 42;      /* Dark navy — sidebar, cards clearly visible vs bg */
+  --color-panel-2: 26 36 58;      /* Mid navy — inputs, hover, secondary surfaces */
+  --color-line:    44 58 88;      /* Visible border — clearly separates elements */
+  --color-text:    236 242 250;   /* Near-white — crisp readable text */
+  --color-muted:   140 158 184;   /* Slate-400 — secondary text, clearly readable */
+  --color-accent:  96 165 250;    /* Blue-400 — bright on dark */
+  --color-warning: 251 191 36;    /* Amber-400 */
+  --color-danger:  251 113 133;   /* Rose-400 */
+  --color-success: 52 211 153;    /* Emerald-400 */
+
+  /* Dark page background — deep indigo-violet tinted */
   --page-bg:
-    radial-gradient(circle at top left, rgba(96, 165, 250, 0.07), transparent 30%),
-    radial-gradient(circle at top right, rgba(52, 211, 153, 0.04), transparent 20%),
-    linear-gradient(180deg, #0b1220, #0f172a);
-  --glass-bg: rgba(20, 27, 45, 0.8);
-  --glass-border: rgba(38, 48, 74, 0.7);
-  --shadow-panel: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.13) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 100%, rgba(52, 211, 153, 0.06) 0%, transparent 45%),
+    radial-gradient(ellipse at 65% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
+    linear-gradient(160deg, #060a14 0%, #09101f 100%);
+
+  --glass-bg:      rgba(17, 25, 42, 0.85);
+  --glass-border:  rgba(44, 58, 88, 0.80);
+
+  /* Dark shadows — use black with significant opacity */
+  --shadow-sm:     0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.20);
+  --shadow-panel:  0 4px 20px -2px rgba(0, 0, 0, 0.40), 0 2px 8px -1px rgba(0, 0, 0, 0.25);
+  --shadow-float:  0 16px 40px -4px rgba(0, 0, 0, 0.55), 0 6px 16px -2px rgba(0, 0, 0, 0.35);
+}
+
+/* ─── Sidebar theme-aware utilities ─────────────────────────────────────────
+   These classes switch between light and dark so the sidebar is never
+   half-light / half-dark regardless of page theme.              */
+
+.sidebar-bg { background: #ffffff; }
+html[data-theme='dark'] .sidebar-bg {
+  background: linear-gradient(180deg, #0d1117 0%, #0f1535 38%, #130d2e 72%, #0c1019 100%);
+}
+
+.sidebar-border       { border-right-color:  rgb(210 218 230); }
+.sidebar-header-border{ border-bottom-color: rgb(210 218 230); }
+.sidebar-divider      { border-top-color:    rgb(210 218 230); }
+
+html[data-theme='dark'] .sidebar-border        { border-right-color:  rgba(255,255,255,0.07); }
+html[data-theme='dark'] .sidebar-header-border { border-bottom-color: rgba(255,255,255,0.07); }
+html[data-theme='dark'] .sidebar-divider       { border-top-color:    rgba(255,255,255,0.06); }
+
+.sidebar-heading  { color: rgb(15 23 42); }
+.sidebar-subtext  { color: rgba(148,163,184,1); letter-spacing: 0.15em; }
+.sidebar-section-label { color: rgb(148 163 184); }
+
+html[data-theme='dark'] .sidebar-heading       { color: #ffffff; }
+html[data-theme='dark'] .sidebar-subtext       { color: rgba(255,255,255,0.35); }
+html[data-theme='dark'] .sidebar-section-label { color: rgba(255,255,255,0.28); }
+
+.sidebar-item           { color: rgb(71 85 105); }
+.sidebar-item:hover     { background: rgba(99,102,241,0.06); color: rgb(15 23 42); }
+.sidebar-item-active    { background: rgba(99,102,241,0.09); color: rgb(15 23 42); }
+
+html[data-theme='dark'] .sidebar-item          { color: rgba(255,255,255,0.55); }
+html[data-theme='dark'] .sidebar-item:hover    { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.90); }
+html[data-theme='dark'] .sidebar-item-active   {
+  background: rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 6px rgba(0,0,0,0.25);
+  color: #ffffff;
+}
+
+.sidebar-active-bar { background: rgb(99 102 241); }
+html[data-theme='dark'] .sidebar-active-bar {
+  background: rgb(129 140 248);
+  box-shadow: 0 0 8px rgba(129,140,248,0.75);
+}
+
+.sidebar-footer-surface { background: rgb(241 245 249); border-color: rgb(210 218 230); }
+html[data-theme='dark'] .sidebar-footer-surface {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.sidebar-glow { display: none; }
+html[data-theme='dark'] .sidebar-glow {
+  display: block;
+  background: radial-gradient(ellipse at 50% -20%, rgba(99,102,241,0.22) 0%, transparent 70%);
 }
 
 html,
@@ -98,16 +178,21 @@ a {
 .glass,
 .surface-card {
   background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgb(var(--color-line) / 1);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(20px);
   border-radius: 1rem;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.glass:hover,
+.surface-card:hover {
+  box-shadow: var(--shadow-float);
+}
+
 .executive-panel {
-  background: linear-gradient(180deg, rgb(var(--color-panel) / 0.98), rgb(var(--color-panel-2) / 0.96));
-  border: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-panel));
+  border: 1px solid rgb(var(--color-line) / 1);
   box-shadow: var(--shadow-panel);
   border-radius: 1rem;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

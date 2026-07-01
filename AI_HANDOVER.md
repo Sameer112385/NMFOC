@@ -2,7 +2,7 @@
 
 ## 1. Current Architecture
 - **Framework**: Next.js 15 (App Router, Server Actions, Server Components)
-- **UI/Styling**: React 19, Tailwind CSS v4, Lucide React (icons), Recharts (data visualization)
+- **UI/Styling**: React 19, Tailwind CSS v4, Lucide React (icons), Recharts (data visualization with custom interactive tooltips)
 - **Database/Backend**: Supabase (PostgreSQL), Supabase Auth
 - **Deployment**: Vercel-ready
 
@@ -36,6 +36,7 @@
 2. **Cost Element Logic**:
    - GR55 Cost Elements must be checked as `include_in_cost` in the Cost Element Control panel to be included in calculations. High-level categories include Materials, Manpower, Subcontractor, Rental, etc.
    - "(Materials + Consumables)" is treated as "Materials".
+   - **COIE Actual Cost Classification**: All rows with `Business Transaction = COIE` must be classified as Material cost, ignoring the cost element name.
 3. **Subcontractor Performance**:
    - Subcontractor accruals and performance are analyzed by PO Number matching against GR55 Purchasing Documents.
 4. **Role-Based Access Control (RBAC)**:
@@ -43,19 +44,19 @@
    - **Project Manager / Viewer**: Read-only access to Project Master Data (inputs disabled, save buttons hidden). The Settings module (`/settings`) is completely hidden from the sidebar and redirects to `/dashboard` if accessed directly.
 
 ## 5. Files Modified Today
-- **RBAC Implementation (Master Data & Settings)**:
-  - `lib/current-user.ts` (Added `canEditProjectMaster` and `canAccessSettings` helpers)
-  - `app/(app)/layout.tsx`, `components/app-shell.tsx`, `components/sidebar.tsx` (Sidebar UI hiding for Settings)
-  - `app/(app)/settings/page.tsx` (Server-side redirect)
-  - `app/(app)/projects/[projectId]/page.tsx` (Prop drilling `canEdit` flag)
-  - `components/project-admin-workspace.tsx` (Read-only banner)
-  - `components/project-admin-details-form.tsx` (Fieldsets disabled for read-only)
-  - `components/project-master-admin-panel.tsx`
-  - `components/project-cost-element-control-panel.tsx`
-  - `components/project-wbs-master-panel.tsx`
-- **Dashboard & Cost Trend Analysis**:
-  - `components/trend-analysis-panel.tsx` (Implemented high-level project-wide trend analysis by cost element group when no WBS is selected).
-  - `lib/financial-engine.ts`, `lib/trends.ts` (Subcontractor PO tracking and data aggregation).
+- **Tooltips Zero-Value Filtering & Scroll Redesign**:
+  - `components/charts.tsx` (Added `CustomChartTooltip` with a dual-column layout to handle large tooltips without scrolling, pre-filtering out zero values)
+  - `components/trend-analysis-panel.tsx` (Added `CustomChartTooltip` with a dual-column layout and pre-filtering out zero values)
+- **Login Loading Transition State**:
+  - `app/(auth)/login/page.tsx` (Fixed login loading transition state bug, keeping loading status active during async Next.js client-side redirection and disabling inputs during loading)
+- **Reverted Manpower CC/WC and RKL Mapping**:
+  - `lib/financial-imports.ts` (Removed RKL to Manpower grouping and partner_object parsing)
+  - `lib/calculations.ts` (Removed RKL to Manpower mapping in actual categories reduction)
+  - `lib/financial-engine.ts` (Removed RKL to Manpower category mapping)
+  - `components/dashboard-client-workspace.tsx` (Removed RKL to Manpower grouping in YTD cost calculation)
+  - `components/trend-analysis-panel.tsx` (Removed the CC/WC manpower toggles, performance hooks, and charts)
+- **Sidebar Menu Icon Change**:
+  - `components/app-shell.tsx` (Replaced chevron expand/collapse icons with hamburger `<Menu>` icon)
 
 ## 6. Open Issues
 - Currently, there are no blocking bugs.

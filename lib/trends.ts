@@ -293,7 +293,7 @@ export function buildTrendData(params: {
       const actual = wbsActualCostMap.get(norm) || 0;
       const pending = wbsPendingCostMap.get(norm) || 0;
 
-      cumulativeActualCost += actual;
+      cumulativeActualCost += (actual + pending);
       cumulativeForecastCost += (actual + pending);
     });
 
@@ -309,8 +309,8 @@ export function buildTrendData(params: {
       const plannedCostWbs = row.planned_cost;
       const plannedRevenueWbs = row.planned_revenue;
 
-      // Actual recognized revenue for WBS
-      const poc = plannedCostWbs > 0 ? Math.min(100, (actual / plannedCostWbs) * 100) : 0;
+      // Actual recognized revenue for WBS (includes GR55 + PM updates)
+      const poc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
       const recognized = (poc / 100) * plannedRevenueWbs;
       cumulativeRecognizedRevenue += recognized;
 

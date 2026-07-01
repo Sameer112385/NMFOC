@@ -16,11 +16,18 @@ export async function parseGr55File(file: File): Promise<ParsedFinancialUpload<G
   const rows = rawRows
     .map((rawRow) => {
       const row = normalizeRow(rawRow);
+      const businessTransaction = String(row.business_transaction ?? '').trim();
       const wbs_code = String(row.wbs_element ?? '').trim();
       const posting_date = toIsoDate(String(row.posting_date ?? '').trim());
       const amount = safeNumber(row.val_coarea_crcy ?? 0);
       const costElement = String(row.cost_element ?? '').trim();
-      const costCategory = String(row.cost_element_name ?? '').trim();
+      
+      // Irrespective of cost element name, if business transaction is COIE, it is Material
+      let costCategory = String(row.cost_element_name ?? '').trim();
+      if (businessTransaction.toUpperCase() === 'COIE') {
+        costCategory = 'Material';
+      }
+
       const currency = String(row.co_area_currency ?? '').trim();
       const purchasingDocument = String(
         row.purchasing_document ??
@@ -60,6 +67,7 @@ export async function parseGr55File(file: File): Promise<ParsedFinancialUpload<G
           fiscal_year: row.fiscal_year ?? null,
           fiscal_period: row.fiscal_period ?? row.period ?? row.from_period ?? null,
           purchasing_document: purchasingDocument,
+          business_transaction: businessTransaction || null,
           source_row_count: 1,
         },
       };

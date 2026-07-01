@@ -266,7 +266,7 @@ export async function getGr55Rows(projectId?: string): Promise<Gr55CostRow[]> {
     const data = await fetchAllSupabaseRows<any>(() => {
       let query = supabase
         .from('gr55_rows')
-        .select('posting_date, wbs_code, cost_category, cost_element, purchasing_document, amount')
+        .select('posting_date, wbs_code, cost_category, cost_element, purchasing_document, amount, raw_data_json')
         .order('posting_date', { ascending: true });
       if (projectId) {
         query = query.eq('project_id', projectId);
@@ -278,7 +278,7 @@ export async function getGr55Rows(projectId?: string): Promise<Gr55CostRow[]> {
     });
     return data.map((row: any) => ({
       ...row,
-      raw_data_json: {},
+      raw_data_json: row.raw_data_json || {},
     })) as Gr55CostRow[];
   } catch {
     return [];

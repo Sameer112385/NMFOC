@@ -116,6 +116,7 @@ export default function LoginPage() {
         if (error) throw error;
         if (data?.user && !data.session) {
           setMessage('Registration successful! Please check your email to confirm.');
+          setLoading(false);
         } else {
           router.push('/projects');
         }
@@ -126,7 +127,6 @@ export default function LoginPage() {
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to authenticate.');
-    } finally {
       setLoading(false);
     }
   }
@@ -267,9 +267,10 @@ export default function LoginPage() {
             <span className="mb-1.5 block text-xs font-semibold text-muted">Email or Username</span>
             <input
               value={email}
+              disabled={loading}
               onChange={(event) => setEmail(event.target.value)}
               type="text"
-              className={inputClass}
+              className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
               placeholder={isSupabaseConfigured ? "name@detasad.com" : "admin"}
             />
           </label>
@@ -277,9 +278,10 @@ export default function LoginPage() {
             <span className="mb-1.5 block text-xs font-semibold text-muted">Password</span>
             <input
               value={password}
+              disabled={loading}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
-              className={inputClass}
+              className={`${inputClass} disabled:opacity-60 disabled:cursor-not-allowed`}
               placeholder="••••••••"
             />
           </label>

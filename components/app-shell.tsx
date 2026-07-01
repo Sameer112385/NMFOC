@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Sidebar } from '@/components/sidebar';
 import { Topbar } from '@/components/topbar';
 import { cn } from '@/lib/utils';
@@ -45,7 +45,7 @@ export function AppShell({ children, userRole, userName }: { children: React.Rea
       <div
         className={cn(
           'min-h-screen transition-[margin-left] duration-300 ease-out',
-          sidebarOpen ? 'lg:ml-72' : 'lg:ml-[92px]',
+          sidebarOpen ? 'lg:ml-[272px]' : 'lg:ml-[72px]',
         )}
       >
         <Topbar onOpenMobile={() => setMobileOpen(true)} sidebarOpen={sidebarOpen} />
@@ -59,11 +59,11 @@ export function AppShell({ children, userRole, userName }: { children: React.Rea
         onClick={() => setSidebarOpen((value) => !value)}
         className={cn(
           'fixed top-[26px] z-50 hidden h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel shadow-sm text-muted hover:text-accent hover:border-accent/40 hover:bg-panel2 transition-all lg:inline-flex',
-          sidebarOpen ? 'left-[272px]' : 'left-[76px]',
+          sidebarOpen ? 'left-[256px]' : 'left-[56px]',
         )}
         aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
       >
-        {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <Menu className="h-4 w-4" />
       </button>
 
       <button

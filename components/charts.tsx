@@ -39,11 +39,48 @@ function chartAxisTickFormatter(value: number | string) {
   return Number.isFinite(parsed) ? formatCompactNumber(parsed) : String(value);
 }
 
-function chartTooltipFormatter(value: number, name: string) {
+function chartTooltipFormatter(value: number, name: string): any {
+  if (value === 0) return null;
   const label = name.toLowerCase();
   if (label.includes('poc') || label.includes('%')) return [formatPercent(value), name];
   return [formatCompactCurrency(value), name];
 }
+
+const CustomChartTooltip = ({ active, payload, label, formatter, labelFormatter }: any) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const activeItems = payload.filter((item: any) => item.value !== undefined && item.value !== null && Number(item.value) !== 0);
+  if (activeItems.length === 0) return null;
+
+  const formattedLabel = labelFormatter ? labelFormatter(label) : label;
+  const isMultiCol = activeItems.length > 8;
+
+  return (
+    <div className="rounded-2xl border border-line bg-panel/95 p-3.5 shadow-xl backdrop-blur-sm font-sans text-xs max-w-[540px]">
+      <p className="font-bold text-text mb-2 border-b border-line/45 pb-1">{formattedLabel}</p>
+      <div className={isMultiCol ? "grid grid-cols-2 gap-x-6 gap-y-0.5 max-h-[85vh] overflow-y-auto pr-1" : "space-y-1"}>
+        {activeItems.map((item: any, index: number) => {
+          const formatted = formatter ? formatter(item.value, item.name, item) : null;
+          const displayVal = formatted
+            ? (Array.isArray(formatted) ? formatted[0] : formatted)
+            : (item.value >= 0 || item.value < 0 ? formatCompactCurrency(item.value) : "");
+
+          const nameLabel = formatted && Array.isArray(formatted) && formatted[1] ? formatted[1] : item.name;
+
+          return (
+            <div key={index} className="flex items-center gap-3 justify-between font-medium py-0.5 border-b border-line/5 last:border-b-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="inline-block h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color || item.fill }} />
+                <span className="text-muted truncate max-w-[150px] text-[10px]" title={nameLabel}>{nameLabel}</span>
+              </div>
+              <span className="font-mono font-bold text-text text-[10px] shrink-0">{displayVal}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 function wrapChart({ title, subtitle, className, children }: { title: string; subtitle?: string; className?: string; children: ReactNode }) {
   return (
@@ -80,7 +117,7 @@ export function RevenueVsSimulationChart({ data }: { data: { name: string; sap: 
                 height={60}
               />
               <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} cursor={{ fill: 'rgb(var(--color-accent) / 0.04)' }} />
+              <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} cursor={{ fill: 'rgb(var(--color-accent) / 0.04)' }} />
               <Legend verticalAlign="top" height={26} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="sap" fill="#3b82f6" name="SAP Revenue" radius={[4, 4, 0, 0]} />
               <Bar dataKey="simulated" fill="#10b981" name="Simulated Revenue" radius={[4, 4, 0, 0]} />
@@ -115,7 +152,7 @@ export function CostComparisonChart({ data }: { data: { name: string; sap: numbe
                 height={60}
               />
               <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+              <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
               <Legend verticalAlign="top" height={26} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="sap" stroke="#f59e0b" strokeWidth={2.5} dot={false} name="SAP Actual Cost" />
               <Line type="monotone" dataKey="simulated" stroke="#3b82f6" strokeWidth={2.5} dot={false} name="Simulated Actual Cost" />
@@ -137,7 +174,7 @@ export function TopWbsChart({ data }: { data: { name: string; value: number }[] 
           <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgb(var(--color-line) / 0.3)" />
           <XAxis type="number" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
           <YAxis dataKey="name" type="category" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} width={140} tickLine={false} axisLine={false} />
-          <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+          <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
           <Bar dataKey="value" radius={[0, 4, 4, 0]}>
             {data.map((entry, index) => (
               <Cell key={entry.name} fill={palette[index % palette.length]} />
@@ -163,7 +200,7 @@ export function ScrollableTopWbsChart({ data }: { data: { name: string; value: n
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgb(var(--color-line) / 0.3)" />
               <XAxis type="number" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
               <YAxis dataKey="name" type="category" stroke="rgb(var(--color-muted) / 0.8)" width={180} interval={0} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+              <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                 {data.map((entry, index) => (
                   <Cell key={entry.name} fill={palette[index % palette.length]} />
@@ -189,7 +226,7 @@ export function PendingChart({ data }: { data: { name: string; value: number }[]
               <Cell key={entry.name} fill={palette[index % palette.length]} />
             ))}
           </Pie>
-          <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+          <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
           <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
@@ -216,11 +253,15 @@ export function RevenueSplitChart({ recognized, remaining, total }: { recognized
             ))}
           </Pie>
           <Tooltip
-            contentStyle={chartTooltipStyle}
-            formatter={(value: number, name: string) => {
-              const percent = safeTotal > 0 ? (value / safeTotal) * 100 : 0;
-              return [`${formatCompactCurrency(value)} (${formatPercent(percent)})`, name];
-            }}
+            content={
+              <CustomChartTooltip
+                formatter={(value: number, name: string) => {
+                  if (value === 0) return null;
+                  const percent = safeTotal > 0 ? (value / safeTotal) * 100 : 0;
+                  return [`${formatCompactCurrency(value)} (${formatPercent(percent)})`, name];
+                }}
+              />
+            }
           />
           <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} formatter={(value) => <span className="text-xs text-text">{value}</span>} />
         </PieChart>
@@ -252,7 +293,7 @@ export function PocChart({ data }: { data: { name: string; value: number }[] }) 
                 height={60}
               />
               <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
-              <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+              <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
               <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -274,7 +315,7 @@ export function RiskChart({ data }: { data: { name: string; value: number }[] })
               <Cell key={entry.name} fill={palette[index % palette.length]} />
             ))}
           </Pie>
-          <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+          <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
           <Legend verticalAlign="bottom" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
@@ -315,7 +356,7 @@ export function RevenueTrendChart({ data }: { data: { period: string; recognized
             axisLine={false} 
             tickFormatter={chartAxisTickFormatter} 
           />
-          <Tooltip contentStyle={chartTooltipStyle} formatter={chartTooltipFormatter} />
+          <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
           <Legend verticalAlign="top" height={26} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
           <Area type="monotone" dataKey="recognizedRevenue" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorRevenue)" name="Monthly Revenue" />
           <Area type="monotone" dataKey="cumulativeRecognizedRevenue" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorCumulative)" name="Cumulative Revenue" />
@@ -351,11 +392,15 @@ export function CostBreakdownChart({ data }: { data: { name: string; value: numb
               ))}
             </Pie>
             <Tooltip
-              contentStyle={chartTooltipStyle}
-              formatter={(value: number, name: string) => {
-                const percent = totalVal > 0 ? (value / totalVal) * 100 : 0;
-                return [`${formatCompactCurrency(value)} (${formatPercent(percent)})`, name];
-              }}
+              content={
+                <CustomChartTooltip
+                  formatter={(value: number, name: string) => {
+                    if (value === 0) return null;
+                    const percent = totalVal > 0 ? (value / totalVal) * 100 : 0;
+                    return [`${formatCompactCurrency(value)} (${formatPercent(percent)})`, name];
+                  }}
+                />
+              }
             />
             <Legend
               verticalAlign="bottom"

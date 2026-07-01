@@ -105,7 +105,8 @@ export function buildFinancialWbsRow(
   const actualCostCategories =
     input.costCategoryBreakdown ??
     actualRows.reduce<Record<string, number>>((acc, row) => {
-      const key = String(row.cost_category ?? 'Unassigned').trim() || 'Unassigned';
+      const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+      const key = btx === "COIE" ? "Material" : (String(row.cost_category ?? 'Unassigned').trim() || 'Unassigned');
       acc[key] = (acc[key] ?? 0) + safeNumber(row.amount);
       return acc;
     }, {});

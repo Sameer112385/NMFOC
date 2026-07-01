@@ -354,6 +354,13 @@ to authenticated
 using (auth.role() = 'authenticated')
 with check (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can delete updates" on pm_daily_updates;
+create policy "Authenticated users can delete updates"
+on pm_daily_updates
+for delete
+to authenticated
+using (auth.role() = 'authenticated');
+
 drop policy if exists "Authenticated users can read gr55 uploads" on gr55_uploads;
 create policy "Authenticated users can read gr55 uploads"
 on gr55_uploads

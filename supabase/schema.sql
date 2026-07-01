@@ -449,6 +449,9 @@ create policy "Authenticated users can write updates" on pm_daily_updates for in
 drop policy if exists "Authenticated users can update updates" on pm_daily_updates;
 create policy "Authenticated users can update updates" on pm_daily_updates for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can delete updates" on pm_daily_updates;
+create policy "Authenticated users can delete updates" on pm_daily_updates for delete using (auth.role() = 'authenticated');
+
 -- simulation_snapshots
 drop policy if exists "Authenticated users can read snapshots" on simulation_snapshots;
 create policy "Authenticated users can read snapshots" on simulation_snapshots for select using (auth.role() = 'authenticated');

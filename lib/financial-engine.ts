@@ -148,7 +148,8 @@ export function buildFinancialRowsFromSources({
         asOfDate,
         reportingWbsLevel: planned?.level ?? null,
         costCategoryBreakdown: (includeInCost && isActive ? actualRows : []).reduce<Record<string, number>>((acc, row) => {
-          const category = String(row.cost_category ?? 'Unassigned').trim() || 'Unassigned';
+          const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+          const category = btx === "COIE" ? "Material" : (String(row.cost_category ?? 'Unassigned').trim() || 'Unassigned');
           acc[category] = (acc[category] ?? 0) + safeNumber(row.amount);
           return acc;
         }, {}),
