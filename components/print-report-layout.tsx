@@ -28,8 +28,8 @@ export default function PrintReportLayout({
   includedSections,
 }: PrintReportLayoutProps) {
   const isGlobal = !project;
-  const projectName = isGlobal ? "All Active Projects Portfolio" : project.name;
-  const projectCode = isGlobal ? "Global Portfolio" : project.code;
+  const projectName = isGlobal ? "All Active Projects Portfolio" : project.project_name;
+  const projectCode = isGlobal ? "Global Portfolio" : project.project_code;
   const reportDate = format(new Date(), "MMMM d, yyyy");
   const reportTime = format(new Date(), "HH:mm:ss");
 

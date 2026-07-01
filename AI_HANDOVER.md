@@ -44,6 +44,12 @@
    - **Project Manager / Viewer**: Read-only access to Project Master Data (inputs disabled, save buttons hidden). The Settings module (`/settings`) is completely hidden from the sidebar and redirects to `/dashboard` if accessed directly.
 
 ## 5. Files Modified Today
+- **Advanced PDF & Excel Exporter Engine**:
+  - `app/(app)/reports/page.tsx` (Converted Reports route to fetch dynamic project details and mount reports builder)
+  - `components/reports-builder.tsx` (New component for scope selection, checkbox configuration, SheetJS Excel exporting, and print toggles)
+  - `components/print-report-layout.tsx` (New print-specific vector A4 landscape/portrait report layout)
+  - `app/globals.css` (Added `@media print` utilities, page breaking, and padding controls)
+  - `components/ui.tsx` (Hidden `PageShell` header elements during printing)
 - **Tooltips Zero-Value Filtering & Scroll Redesign**:
   - `components/charts.tsx` (Added `CustomChartTooltip` with a dual-column layout to handle large tooltips without scrolling, pre-filtering out zero values)
   - `components/trend-analysis-panel.tsx` (Added `CustomChartTooltip` with a dual-column layout and pre-filtering out zero values)
@@ -65,4 +71,4 @@
 ## 7. Next Recommended Tasks
 1. **PM Daily Updates**: Build out the daily progress update wizards for Project Managers.
 2. **Supabase RLS**: Implement strict Postgres Row-Level Security (RLS) policies referencing `users_profile.role` to ensure backend data integrity matches the frontend RBAC.
-3. **Advanced Reporting**: Build out the comprehensive `/reports` section with PDF export capabilities.
+3. **Advanced Reporting**: Build out dynamic charting summaries within the print PDFs.

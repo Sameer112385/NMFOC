@@ -37,7 +37,7 @@ export default function ReportsBuilder({
 
   // Filter logic based on project scope selection
   const selectedProject = selectedProjectId === "all" ? null : projects.find((p) => String(p.id) === selectedProjectId);
-  const projectCode = selectedProject ? selectedProject.code : null;
+  const projectCode = selectedProject ? selectedProject.project_code : null;
 
   const filteredWbsRows = allWbsRows.filter((row) => {
     if (!projectCode) return true;
@@ -85,8 +85,8 @@ export default function ReportsBuilder({
   const handleExportExcel = () => {
     setIsExportingExcel(true);
     try {
-      const projectName = selectedProject ? selectedProject.name : "All Projects Portfolio";
-      const codeLabel = selectedProject ? selectedProject.code : "Global";
+      const projectName = selectedProject ? selectedProject.project_name : "All Projects Portfolio";
+      const codeLabel = selectedProject ? selectedProject.project_code : "Global";
 
       // 1. Create Summary Tab
       const actualCost = filteredWbsRows.reduce((sum, r) => sum + (r.actual_cost_to_date || 0), 0);
@@ -215,7 +215,7 @@ export default function ReportsBuilder({
                 <option value="all">Global Portfolio (All Active Projects)</option>
                 {projects.map((p) => (
                   <option key={p.id} value={String(p.id)}>
-                    {p.code} - {p.name}
+                    {p.project_code} - {p.project_name}
                   </option>
                 ))}
               </select>

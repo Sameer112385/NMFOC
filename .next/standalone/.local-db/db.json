@@ -1,0 +1,19 @@
+{
+  "projects": [
+    {
+      "id": "050fdb0b-8103-45a0-96b7-4468118fb43b",
+      "project_code": "SIS-NGS.FOC.W.JD.001",
+      "project_name": "SEC NG NMFOC Jeddah",
+      "client_name": "Saudi Electric Company",
+      "status": "Active",
+      "created_at": "2026-06-14T00:00:00.000Z"
+    }
+  ],
+  "cn41_uploads": [],
+  "cn41_rows": [],
+  "revenue_wbs": [],
+  "pm_daily_updates": [],
+  "simulation_snapshots": [],
+  "risk_alerts": [],
+  "comments": []
+}
