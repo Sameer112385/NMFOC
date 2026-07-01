@@ -10,7 +10,7 @@ export function PageShell({ title, subtitle, kicker, actions, children }: {
 }) {
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-line/50 pb-5 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 border-b border-line/50 pb-5 md:flex-row md:items-center md:justify-between no-print">
         <div>
           {kicker ? <div className="section-kicker text-accent font-bold tracking-[0.12em]">{kicker}</div> : null}
           <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-text md:text-3xl">{title}</h1>
