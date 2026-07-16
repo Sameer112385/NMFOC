@@ -18,6 +18,7 @@ import {
 import { getEffectivePendingCost } from "@/lib/pm-posting";
 import { Briefcase, Coins, Percent, TrendingUp, Activity, ShieldAlert, DollarSign, Filter } from "lucide-react";
 import { TrendAnalysisPanel } from "@/components/trend-analysis-panel";
+import { isWidgetHidden, type DashboardLayout } from "@/lib/dashboard-widgets";
 import { buildTrendData } from "@/lib/trends";
 import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import type {
@@ -106,6 +107,7 @@ interface DashboardClientWorkspaceProps {
   costElementControl: ProjectCostElementControl[];
   gr55Rows: Gr55CostRow[];
   historicalRevenueRows?: HistoricalRevenueRow[];
+  dashboardLayout?: DashboardLayout;
 }
 
 export function DashboardClientWorkspace({
@@ -121,7 +123,11 @@ export function DashboardClientWorkspace({
   costElementControl,
   gr55Rows,
   historicalRevenueRows = [],
+  dashboardLayout,
 }: DashboardClientWorkspaceProps) {
+  // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual;
+  // an unknown or typo'd id stays visible, so gating can never accidentally hide something.
+  const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
   const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [selectedPos, setSelectedPos] = useState<string[]>([]);
@@ -291,63 +297,83 @@ export function DashboardClientWorkspace({
 
           <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
             {/* Cost Cards */}
-            <StatCard title="Planned Cost" value={formatCurrency(plannedCost)} icon={Briefcase} tone="accent" group="cost" />
-            <StatCard
-              title="Management Actual Cost"
-              value={formatCurrency(actualCost)}
-              icon={Coins}
-              tone="accent"
-              group="cost"
-              hint="GR55 actual + active PM simulated cost"
-            />
+            {show('summary.card.plannedCost') && (
+              <StatCard title="Planned Cost" value={formatCurrency(plannedCost)} icon={Briefcase} tone="accent" group="cost" />
+            )}
+            {show('summary.card.mgmtActualCost') && (
+              <StatCard
+                title="Management Actual Cost"
+                value={formatCurrency(actualCost)}
+                icon={Coins}
+                tone="accent"
+                group="cost"
+                hint="GR55 actual + active PM simulated cost"
+              />
+            )}
 
             {/* Revenue Cards */}
-            <StatCard title="Planned Revenue" value={formatCurrency(plannedRevenue)} icon={DollarSign} tone="success" group="revenue" />
-            <StatCard
-              title="Recognized Revenue"
-              value={formatCurrency(recognizedRevenue)}
-              icon={TrendingUp}
-              tone="success"
-              group="revenue"
-              hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC"
-            />
+            {show('summary.card.plannedRevenue') && (
+              <StatCard title="Planned Revenue" value={formatCurrency(plannedRevenue)} icon={DollarSign} tone="success" group="revenue" />
+            )}
+            {show('summary.card.recognizedRevenue') && (
+              <StatCard
+                title="Recognized Revenue"
+                value={formatCurrency(recognizedRevenue)}
+                icon={TrendingUp}
+                tone="success"
+                group="revenue"
+                hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC"
+              />
+            )}
 
             {/* Margin & Progress Cards */}
-            <StatCard
-              title="Forecast Margin"
-              value={formatCurrency(forecastMargin)}
-              icon={Percent}
-              tone={forecastMargin >= 0 ? "success" : "danger"}
-              group="margin"
-            />
-            <StatCard title="POC %" value={formatPercent(pocPercent)} icon={Percent} tone="success" group="progress" />
+            {show('summary.card.forecastMargin') && (
+              <StatCard
+                title="Forecast Margin"
+                value={formatCurrency(forecastMargin)}
+                icon={Percent}
+                tone={forecastMargin >= 0 ? "success" : "danger"}
+                group="margin"
+              />
+            )}
+            {show('summary.card.pocPercent') && (
+              <StatCard title="POC %" value={formatPercent(pocPercent)} icon={Percent} tone="success" group="progress" />
+            )}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="surface-card p-5">
-              <h3 className="text-base font-semibold text-text">SAP View</h3>
-              <div className="mt-4 space-y-1">
-                <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
-                <StatRow label="SAP POC %" value={formatPercent(sapPocPercent)} />
-                <StatRow label="SAP recognized revenue" value={formatCurrency(sapRecognizedRevenue)} />
-                <StatRow label="SAP margin" value={formatCurrency(sapMargin)} />
-              </div>
+          {(show('summary.panel.sapView') || show('summary.panel.managementView')) && (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {show('summary.panel.sapView') && (
+                <div className="surface-card p-5">
+                  <h3 className="text-base font-semibold text-text">SAP View</h3>
+                  <div className="mt-4 space-y-1">
+                    <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
+                    <StatRow label="SAP POC %" value={formatPercent(sapPocPercent)} />
+                    <StatRow label="SAP recognized revenue" value={formatCurrency(sapRecognizedRevenue)} />
+                    <StatRow label="SAP margin" value={formatCurrency(sapMargin)} />
+                  </div>
+                </div>
+              )}
+              {show('summary.panel.managementView') && (
+                <div className="surface-card p-5">
+                  <h3 className="text-base font-semibold text-text">Management View</h3>
+                  <div className="mt-4 space-y-1">
+                    <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
+                    <StatRow label="PM simulated cost" value={formatCurrency(pmSimulatedCost)} />
+                    <StatRow label="Management actual cost" value={formatCurrency(actualCost)} />
+                    <StatRow label="Management POC %" value={formatPercent(pocPercent)} />
+                    <StatRow label="Management recognized revenue" value={formatCurrency(recognizedRevenue)} />
+                    <StatRow label="Management margin" value={formatCurrency(managementMargin)} />
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="surface-card p-5">
-              <h3 className="text-base font-semibold text-text">Management View</h3>
-              <div className="mt-4 space-y-1">
-                <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
-                <StatRow label="PM simulated cost" value={formatCurrency(pmSimulatedCost)} />
-                <StatRow label="Management actual cost" value={formatCurrency(actualCost)} />
-                <StatRow label="Management POC %" value={formatPercent(pocPercent)} />
-                <StatRow label="Management recognized revenue" value={formatCurrency(recognizedRevenue)} />
-                <StatRow label="Management margin" value={formatCurrency(managementMargin)} />
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* YTD Performance Metrics Row */}
+          {(show('summary.panel.projectToDate') || show('summary.panel.ytdPerformance') || show('summary.panel.periodRollups')) && (
           <div className="grid gap-4 xl:grid-cols-3">
+            {show('summary.panel.projectToDate') && (
             <div className="surface-card p-5">
               <h3 className="text-base font-semibold text-text">Project-to-Date</h3>
               <div className="mt-4 space-y-1">
@@ -358,7 +384,9 @@ export function DashboardClientWorkspace({
                 <StatRow label="Current month revenue recognition" value={formatCurrency(currentMonthRevenue)} />
               </div>
             </div>
+            )}
 
+            {show('summary.panel.ytdPerformance') && (
             <div className="surface-card p-5">
               <h3 className="text-base font-semibold text-text">YTD Performance</h3>
               <div className="mt-4 space-y-1">
@@ -420,7 +448,9 @@ export function DashboardClientWorkspace({
                 })()}
               </div>
             </div>
+            )}
 
+            {show('summary.panel.periodRollups') && (
             <div className="surface-card p-5">
               <h3 className="text-base font-semibold text-text">Period Rollups</h3>
               <div className="mt-4 space-y-1">
@@ -431,7 +461,9 @@ export function DashboardClientWorkspace({
                 <StatRow label="Project status" value={project.status ?? "Active"} />
               </div>
             </div>
+            )}
           </div>
+          )}
 
           {!revenueRows.length ? (
             <div className="rounded-3xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
@@ -441,6 +473,7 @@ export function DashboardClientWorkspace({
           ) : (
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2">
+                {show('summary.chart.revenueTrend') && (
                 <RevenueTrendChart
                   data={trendData.map((pt) => ({
                     ...pt,
@@ -448,8 +481,14 @@ export function DashboardClientWorkspace({
                     cumulativeRecognizedRevenue: pt.cumulativeForecastRevenue,
                   }))}
                 />
+                )}
+                {show('summary.chart.revenueSplit') && (
                 <RevenueSplitChart recognized={recognizedRevenue} remaining={Math.max(0, remainingRevenue)} total={plannedRevenue} />
+                )}
+                {show('summary.chart.pocByWbs') && (
                 <PocChart data={filteredCostRows.map((row) => ({ name: row.wbs_code, value: row.poc_percent }))} />
+                )}
+                {show('summary.chart.revenueVsSimulation') && (
                 <RevenueVsSimulationChart
                   data={filteredRevenueRows.map((row) => ({
                     name: row.wbs_code,
@@ -457,6 +496,8 @@ export function DashboardClientWorkspace({
                     simulated: row.recognized_revenue_to_date,
                   }))}
                 />
+                )}
+                {show('summary.chart.costComparison') && (
                 <CostComparisonChart
                   data={filteredCostRows.map((row) => ({
                     name: row.wbs_code,
@@ -464,6 +505,8 @@ export function DashboardClientWorkspace({
                     simulated: row.actual_cost_to_date,
                   }))}
                 />
+                )}
+                {show('summary.chart.topWbs') && (
                 <TopWbsChart
                   data={filteredRevenueRows
                     .slice()
@@ -471,8 +514,10 @@ export function DashboardClientWorkspace({
                     .slice(0, 6)
                     .map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.recognized_revenue_to_date }))}
                 />
+                )}
               </div>
 
+              {show('summary.table.wbsFinancialAnalysis') && (
               <div className="rounded-3xl border border-line/70 bg-panel/70 p-5">
                 <h3 className="text-base font-semibold text-text">WBS Financial Analysis</h3>
                 <p className="text-sm text-muted">Filter the WBS rows for the active project.</p>
@@ -490,10 +535,13 @@ export function DashboardClientWorkspace({
                   />
                 </div>
               </div>
+              )}
             </div>
           )}
 
+          {(show('summary.panel.projectDetails') || (latestPmUpdate && show('summary.panel.pendingForPosting')) || show('summary.panel.topRiskExposure')) && (
           <div className="grid gap-6 xl:grid-cols-2">
+            {show('summary.panel.projectDetails') && (
             <div className="surface-card p-6">
               <h3 className="text-base font-semibold text-text">Project Details</h3>
               <div className="mt-4 space-y-1">
@@ -503,8 +551,9 @@ export function DashboardClientWorkspace({
                 <StatRow label="Daily PM Updates" value={String(updates.length)} />
               </div>
             </div>
+            )}
 
-            {latestPmUpdate ? (
+            {latestPmUpdate && show('summary.panel.pendingForPosting') ? (
               <div className="surface-card p-6">
                 <h3 className="flex items-center gap-2 text-base font-semibold text-text">
                   <Activity className="h-5 w-5 text-warning" />
@@ -525,6 +574,7 @@ export function DashboardClientWorkspace({
               </div>
             ) : null}
 
+            {show('summary.panel.topRiskExposure') && (
             <div className="surface-card p-6 xl:col-span-2">
               <h3 className="flex items-center gap-2 text-base font-semibold text-text">
                 <ShieldAlert className="h-5 w-5 text-danger" />
@@ -552,7 +602,9 @@ export function DashboardClientWorkspace({
                 ) : null}
               </div>
             </div>
+            )}
           </div>
+          )}
 
           <ProjectMasterAdminPanel
             projectId={project.id}
@@ -576,6 +628,7 @@ export function DashboardClientWorkspace({
           selectedPos={selectedPos}
           setSelectedPos={setSelectedPos}
           poOptions={poOptions}
+          dashboardLayout={dashboardLayout}
         />
       )}
     </div>

@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { buildTrendData, normalizeCode, type TrendDataPoint } from "@/lib/trends";
+import { isWidgetHidden, type DashboardLayout } from "@/lib/dashboard-widgets";
 import { getEffectivePendingCost } from "@/lib/pm-posting";
 import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import { DarkSelect } from "@/components/dark-select";
@@ -122,6 +123,7 @@ interface TrendAnalysisPanelProps {
   setSelectedPos: (val: string[]) => void;
   poOptions: string[];
   historicalRevenueRows?: HistoricalRevenueRow[];
+  dashboardLayout?: DashboardLayout;
 }
 
 // ---- Per-column (period) value filter, Excel-autofilter style ----
@@ -426,7 +428,10 @@ export function TrendAnalysisPanel({
   setSelectedPos,
   poOptions,
   historicalRevenueRows = [],
+  dashboardLayout,
 }: TrendAnalysisPanelProps) {
+  // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual.
+  const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
   // Filters State (Project & Customer are removed as they are contextually fixed)
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [periodType, setPeriodType] = useState<"month" | "quarter" | "year">("month");
@@ -1402,6 +1407,7 @@ export function TrendAnalysisPanel({
         </div>
       )}
       {/* 2. KPIs Metrics Grid */}
+      {show('trends.kpis') && (
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
         {/* Planned Cost */}
         <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
@@ -1516,10 +1522,13 @@ export function TrendAnalysisPanel({
           </div>
         </div>
       </div>
+      )}
 
       {/* 3. Trend Charts Grid */}
+      {(show('trends.chart.costTrend') || show('trends.chart.revenueTrend') || show('trends.chart.costVsRevenueGrowth') || show('trends.chart.forecastTrend')) && (
       <div className="grid gap-6 md:grid-cols-2">
         {/* Chart 1: Project Cost Trend Chart */}
+        {show('trends.chart.costTrend') && (
         <div className="surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
           <div className="flex items-center justify-between border-b border-line/30 pb-3 mb-4">
             <div>
@@ -1605,8 +1614,10 @@ export function TrendAnalysisPanel({
             </ResponsiveContainer>
           </div>
         </div>
+        )}
 
         {/* Chart 2: Project Revenue Trend Chart */}
+        {show('trends.chart.revenueTrend') && (
         <div className="surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
           <div className="flex items-center justify-between border-b border-line/30 pb-3 mb-4">
             <div>
@@ -1692,8 +1703,10 @@ export function TrendAnalysisPanel({
             </ResponsiveContainer>
           </div>
         </div>
+        )}
 
         {/* Chart 3: Cost vs Revenue Trend (Combined) */}
+        {show('trends.chart.costVsRevenueGrowth') && (
         <div className="surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
           <div className="border-b border-line/30 pb-3 mb-4">
             <h3 className="text-sm font-bold text-text">Cost vs Revenue Growth</h3>
@@ -1740,8 +1753,10 @@ export function TrendAnalysisPanel({
             </ResponsiveContainer>
           </div>
         </div>
+        )}
 
         {/* Chart 4: Forecast Trend (Highlighting Projected Overruns) */}
+        {show('trends.chart.forecastTrend') && (
         <div className="surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
           <div className="border-b border-line/30 pb-3 mb-4">
             <h3 className="text-sm font-bold text-text">Forecast Trend</h3>
@@ -1791,9 +1806,12 @@ export function TrendAnalysisPanel({
             </ResponsiveContainer>
           </div>
         </div>
+        )}
       </div>
+      )}
 
       {/* 3b. Cost Element Analysis Section */}
+      {show('trends.section.costElementAnalysis') && (
       <div className="surface-card p-6 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card relative z-20">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-line/30 pb-4 mb-6">
           <div>
@@ -1967,9 +1985,10 @@ export function TrendAnalysisPanel({
           </div>
         )}
       </div>
+      )}
 
       {/* 3c. Subcontractor Performance by PO – visible only in Subcontractor view and when a single PO is not selected */}
-      {costViewMode === "subcontractor" && selectedPos.length !== 1 && poPerformanceData && (
+      {show('trends.section.subcontractorPo') && costViewMode === "subcontractor" && selectedPos.length !== 1 && poPerformanceData && (
         <div className="surface-card p-6 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
           {/* Header */}
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-line/30 pb-4 mb-6">
@@ -2161,6 +2180,7 @@ export function TrendAnalysisPanel({
       {/* 4. Revenue by WBS & Period matrix */}
       {/* relative z-0 pins this card's own stacking context BELOW the page filter bar
           (sticky top-[138px] z-10 above), so the sticky cells inside can never paint over it. */}
+      {show('trends.section.revenueByWbsMatrix') && (
       <div className="relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-line/30 pb-4">
           <div>
@@ -2403,8 +2423,10 @@ export function TrendAnalysisPanel({
           </div>
         )}
       </div>
+      )}
 
       {/* 5. Interactive Drill-Down Table */}
+      {show('trends.section.drilldown') && (
       <div className="rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line/30 pb-4">
           <div>
@@ -2703,6 +2725,7 @@ export function TrendAnalysisPanel({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
