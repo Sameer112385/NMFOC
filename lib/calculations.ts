@@ -5,6 +5,7 @@ import type {
   DailyUpdate,
   FinancialSummary,
   Gr55CostRow,
+  HistoricalRevenueRow,
   RevenueWBS,
   RiskAlert,
   SalesOrderRevenueRow,
@@ -33,6 +34,8 @@ export function buildFinancialWbsRow(
     plannedCost: number;
     plannedRevenue: number;
     actualCostRows?: Gr55CostRow[];
+    historicalRevenueRows?: HistoricalRevenueRow[];
+    gr55RawRowsForRevenue?: Gr55CostRow[];
     salesOrderRows?: SalesOrderRevenueRow[];
     updates?: DailyUpdate[];
     asOfDate?: string | null;
@@ -47,6 +50,51 @@ export function buildFinancialWbsRow(
   const activeUpdates = input.updates ?? [];
   const pmSimulatedCost = activeUpdates.reduce((sum, item) => sum + getEffectivePendingCost(item), 0);
 
+  // Compute reporting period (current month)
+  const currentPeriod = input.asOfDate ? input.asOfDate.slice(0, 7) : ''; // e.g. "2026-07"
+
+  // Helper to extract posted revenue for any specific month
+  const getPostedRevenueForMonth = (monthStr: string): number => {
+    const isPre2026 = monthStr < '2026-01';
+    if (isPre2026) {
+      // Historical revenue values are already negated to positive during parsing/ingestion
+      return (input.historicalRevenueRows ?? [])
+        .filter((row) => {
+          const m = row.posting_date ? row.posting_date.slice(0, 7) : '';
+          if (m !== monthStr) return false;
+          const costEl = String(row.cost_element ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return ['400110', '400119', '400210', '400310'].includes(costEl);
+        })
+        .reduce((sum, row) => sum + safeNumber(row.amount), 0);
+    } else {
+      // Negate GR55 sum because raw SAP revenue postings are negative (credit)
+      const sum = (input.gr55RawRowsForRevenue ?? [])
+        .filter((row) => {
+          const m = row.posting_date ? row.posting_date.slice(0, 7) : '';
+          if (m !== monthStr) return false;
+          const costEl = String(row.cost_element ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return ['400110', '400119', '400210', '400310'].includes(costEl);
+        })
+        .reduce((sum, row) => sum + safeNumber(row.amount), 0);
+      return -sum;
+    }
+  };
+
+  // Collect all unique historical months prior to the current period
+  const prevMonthsSet = new Set<string>();
+  (input.historicalRevenueRows ?? []).forEach((row) => {
+    const m = row.posting_date ? row.posting_date.slice(0, 7) : '';
+    if (m && m < currentPeriod) prevMonthsSet.add(m);
+  });
+  (input.gr55RawRowsForRevenue ?? []).forEach((row) => {
+    const m = row.posting_date ? row.posting_date.slice(0, 7) : '';
+    if (m && m >= '2026-01' && m < currentPeriod) prevMonthsSet.add(m);
+  });
+
+  const prevMonthsList = Array.from(prevMonthsSet).sort();
+  const cumulativePostedRevenuePrevMonths = prevMonthsList.reduce((sum, month) => sum + getPostedRevenueForMonth(month), 0);
+
+  // Cost-to-cost calculations (actualRows already has revenue GLs excluded)
   const sapActualCostToDate = actualRows.reduce((sum, row) => sum + safeNumber(row.amount), 0);
   const sapMtdActualCost = actualRows
     .filter((row) => isSameMonth(row.posting_date, input.asOfDate))
@@ -54,14 +102,12 @@ export function buildFinancialWbsRow(
   const sapYtdActualCost = actualRows
     .filter((row) => isSameYear(row.posting_date, input.asOfDate))
     .reduce((sum, row) => sum + safeNumber(row.amount), 0);
+
   const mtdPmSimulatedCost = activeUpdates
     .filter((update) => isSameMonth(update.update_date, input.asOfDate))
     .reduce((sum, update) => sum + getEffectivePendingCost(update), 0);
   const ytdPmSimulatedCost = activeUpdates
     .filter((update) => isSameYear(update.update_date, input.asOfDate))
-    .reduce((sum, update) => sum + getEffectivePendingCost(update), 0);
-  const openingPmSimulatedCost = activeUpdates
-    .filter((update) => isBeforeMonth(update.update_date, input.asOfDate))
     .reduce((sum, update) => sum + getEffectivePendingCost(update), 0);
   const managementActualCostToDate = sapActualCostToDate + pmSimulatedCost;
   const managementMtdActualCost = sapMtdActualCost + mtdPmSimulatedCost;
@@ -71,27 +117,40 @@ export function buildFinancialWbsRow(
     (sum, row) => sum + safeNumber(row.planned_revenue) + safeNumber(row.amendment_delta),
     0,
   );
-  const sapRecognizedRevenueToDate = calculateRecognizedRevenue(sapActualCostToDate, plannedCost, plannedRevenue);
-  const recognizedRevenueToDate = calculateRecognizedRevenue(managementActualCostToDate, plannedCost, plannedRevenue);
-  const openingRecognizedRevenue = calculateRecognizedRevenue(
-    actualRows.filter((row) => isBeforeMonth(row.posting_date, input.asOfDate)).reduce((sum, row) => sum + safeNumber(row.amount), 0) +
-      openingPmSimulatedCost,
-    plannedCost,
-    plannedRevenue,
-  );
-  const monthEndRecognizedRevenue = recognizedRevenueToDate;
-  const currentMonthRevenueRecognition = monthEndRecognizedRevenue - openingRecognizedRevenue;
-  const mtdRevenueRecognition = currentMonthRevenueRecognition;
-  const ytdRevenueRecognition = calculateRecognizedRevenue(managementYtdActualCost, plannedCost, plannedRevenue);
+
+  // POC revenue recognition
+  const pocPercent = calculateCostToCostPoc(managementActualCostToDate, plannedCost);
+  const sapPocPercent = calculateCostToCostPoc(sapActualCostToDate, plannedCost);
+
+  // Cumulative POC recognized revenues to date
+  const recognizedRevenueToDate = (pocPercent / 100) * (totalPlannedRevenue || plannedRevenue);
+  const sapRecognizedRevenueToDate = (sapPocPercent / 100) * (totalPlannedRevenue || plannedRevenue);
+
+  // Option A (Cumulative POC Delta): Current Month POC revenue is the delta between cumulative POC revenue and previous months' actual postings
+  const currentMonthRevenue = recognizedRevenueToDate - cumulativePostedRevenuePrevMonths;
+  const mtdRevenueRecognition = currentMonthRevenue;
+
+  // YTD Revenue: Sum of monthly revenues in the current fiscal year up to and including the current month
+  const currentYear = currentPeriod ? currentPeriod.slice(0, 4) : '';
+  let ytdRevenueRecognition = 0;
+  if (currentYear) {
+    const currentMonthInt = currentPeriod ? parseInt(currentPeriod.slice(5, 7), 10) : 0;
+    for (let mVal = 1; mVal <= currentMonthInt; mVal++) {
+      const monthStr = `${currentYear}-${mVal < 10 ? '0' + mVal : mVal}`;
+      if (monthStr < currentPeriod) {
+        ytdRevenueRecognition += getPostedRevenueForMonth(monthStr);
+      } else if (monthStr === currentPeriod) {
+        ytdRevenueRecognition += currentMonthRevenue;
+      }
+    }
+  }
 
   const forecastCost = managementActualCostToDate;
   const forecastRevenue = recognizedRevenueToDate;
-  const remainingRevenue = plannedRevenue - recognizedRevenueToDate;
+  const remainingRevenue = (totalPlannedRevenue || plannedRevenue) - recognizedRevenueToDate;
   const remainingCost = plannedCost - managementActualCostToDate;
-  const forecastMargin = plannedRevenue - managementActualCostToDate;
-  const forecastMarginPercent = plannedRevenue > 0 ? (forecastMargin / plannedRevenue) * 100 : 0;
-  const pocPercent = calculateCostToCostPoc(managementActualCostToDate, plannedCost);
-  const sapPocPercent = calculateCostToCostPoc(sapActualCostToDate, plannedCost);
+  const forecastMargin = (totalPlannedRevenue || plannedRevenue) - managementActualCostToDate;
+  const forecastMarginPercent = (totalPlannedRevenue || plannedRevenue) > 0 ? (forecastMargin / (totalPlannedRevenue || plannedRevenue)) * 100 : 0;
   const mtdMargin = mtdRevenueRecognition - managementMtdActualCost;
   const ytdMargin = ytdRevenueRecognition - managementYtdActualCost;
   const ytdMarginPercent = ytdRevenueRecognition > 0 ? (ytdMargin / ytdRevenueRecognition) * 100 : 0;
@@ -122,9 +181,9 @@ export function buildFinancialWbsRow(
     mtd_actual_cost: managementMtdActualCost,
     ytd_actual_cost: managementYtdActualCost,
     planned_revenue: totalPlannedRevenue || plannedRevenue,
-    opening_recognized_revenue: openingRecognizedRevenue,
+    opening_recognized_revenue: cumulativePostedRevenuePrevMonths,
     recognized_revenue_to_date: recognizedRevenueToDate,
-    current_month_revenue_recognition: currentMonthRevenueRecognition,
+    current_month_revenue_recognition: currentMonthRevenue,
     mtd_revenue_recognition: mtdRevenueRecognition,
     ytd_revenue_recognition: ytdRevenueRecognition,
     remaining_revenue: remainingRevenue,

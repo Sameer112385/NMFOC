@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 export { parseCn41File } from '@/lib/cn41';
-import type { Gr55CostRow, SalesOrderRevenueRow } from '@/lib/types';
+import type { Gr55CostRow, HistoricalRevenueRow, SalesOrderRevenueRow } from '@/lib/types';
 import { safeNumber } from '@/lib/utils';
 
 export type ParsedFinancialUpload<T> = {
@@ -79,6 +79,66 @@ export async function parseGr55File(file: File): Promise<ParsedFinancialUpload<G
   };
 }
 
+export async function parseHistoricalRevenueFile(file: File): Promise<ParsedFinancialUpload<HistoricalRevenueRow>> {
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
+
+  const cleanSapAmount = (val: any): number => {
+    if (val === undefined || val === null) return 0;
+    const str = String(val).trim();
+    if (!str) return 0;
+    if (str.startsWith('(') && str.endsWith(')')) {
+      return -safeNumber(str.slice(1, -1));
+    }
+    return safeNumber(str);
+  };
+
+  const rows = rawRows
+    .map((rawRow) => {
+      const row = normalizeRow(rawRow);
+      const wbs_code = String(row.ps_posid ?? row.wbs_element ?? row.wbs_code ?? row.wbs ?? '').trim();
+      const posting_date = toIsoDate(String(row.budat ?? row.posting_date ?? row.date ?? '').trim());
+      
+      const rawAmount = cleanSapAmount(row.tsl ?? row.wsl ?? row.hsl ?? row.amount ?? row.val_coarea_crcy ?? row.value ?? row.amt ?? 0);
+      // Negate because SAP revenues are credit (negative) in ledgers
+      const amount = -rawAmount;
+
+      const rawCostElement = String(row.racct ?? row.cost_element ?? row.cost_elem ?? row.gl_account ?? row.gl ?? row.account ?? '').trim();
+      const costElement = rawCostElement.replace(/^0+/, ''); // Strip leading zeros like "0000400110" -> "400110"
+      
+      const currency = String(row.co_area_currency ?? row.currency ?? '').trim();
+
+      return {
+        project_id: '',
+        upload_id: null,
+        posting_date,
+        fiscal_year: safeNumber(row.fiscal_year ?? row.year ?? row.ryear ?? row.gjahr) || null,
+        fiscal_period: safeNumber(row.fiscal_period ?? row.period ?? row.from_period ?? row.fiscyearper) || null,
+        wbs_code,
+        wbs_description: String(row.co_object_name ?? row.wbs_description ?? row.description ?? row.sgtxt ?? '').trim() || null,
+        cost_element: costElement || '',
+        amount,
+        currency: currency || null,
+        raw_data_json: {
+          wbs_element: wbs_code,
+          posting_date,
+          val_coarea_crcy: amount,
+          co_area_currency: currency,
+          cost_element: costElement,
+          fiscal_year: row.fiscal_year ?? row.year ?? row.ryear ?? row.gjahr ?? null,
+          fiscal_period: row.fiscal_period ?? row.period ?? row.from_period ?? row.fiscyearper ?? null,
+          source_row_count: 1,
+        },
+      };
+    })
+    .filter((row) => row.wbs_code && row.posting_date);
+
+  return {
+    rows,
+  };
+}
+
 export async function parseSalesOrderFile(file: File): Promise<ParsedFinancialUpload<SalesOrderRevenueRow>> {
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -136,12 +196,18 @@ function toIsoDate(value: string) {
   const num = Number(text);
   if (!Number.isNaN(num) && num > 30000 && num < 60000) {
     const date = new Date((num - 25569) * 86400 * 1000);
-    return date.toISOString().slice(0, 10);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
   
   const parsed = new Date(text);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
   const match = text.match(/(\d{4})[-/](\d{2})[-/](\d{2})/);
   if (match) {

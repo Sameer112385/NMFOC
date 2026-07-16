@@ -204,7 +204,7 @@ export function ProjectAdminDetailsForm({
     }
 
     setMessage("Financials recalculated. " + (payload.rowCount ?? 0) + " WBS row(s) updated.");
-    router.refresh();
+    window.location.reload();
   }
 
   function updateSubcontractRow(id: string, key: keyof EditableSubcontractRow, value: string) {

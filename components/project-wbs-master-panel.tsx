@@ -79,7 +79,7 @@ export function ProjectWbsMasterPanel({ projectId, rows, canEdit = true }: Props
     }
 
     setMessage(`WBS configuration saved. Recalculated ${recalcPayload.rowCount ?? 0} financial WBS row(s).`);
-    router.refresh();
+    window.location.reload();
   }
 
   async function recalculateRows() {
@@ -100,7 +100,7 @@ export function ProjectWbsMasterPanel({ projectId, rows, canEdit = true }: Props
     }
 
     setMessage(`Recalculated ${payload.rowCount ?? 0} WBS row(s) from the current source data.`);
-    router.refresh();
+    window.location.reload();
   }
 
   return (

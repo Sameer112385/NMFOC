@@ -83,7 +83,7 @@ export function ProjectCostElementControlPanel({ projectId, rows, canEdit = true
     }
 
     setMessage(`Cost element control saved. Recalculated ${recalcPayload.rowCount ?? 0} financial WBS row(s).`);
-    router.refresh();
+    window.location.reload();
   }
 
   async function recalculateRows() {
@@ -103,7 +103,7 @@ export function ProjectCostElementControlPanel({ projectId, rows, canEdit = true
     }
 
     setMessage(`Recalculated ${payload.rowCount ?? 0} WBS row(s) from current cost element settings.`);
-    router.refresh();
+    window.location.reload();
   }
 
   return (

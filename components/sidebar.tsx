@@ -21,10 +21,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// ─── Logo configuration ───────────────────────────────────────────────────────
-// Place your logo file at: /public/logo.png (or .svg / .webp)
-// Set LOGO_SRC to null to use the default gradient monogram instead.
-const LOGO_SRC: string | null = '/logo.png';
+const LOGO_BASE_SRC = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/cn41-files/global/logo.png`
+  : null;
 
 const THEME_STORAGE_KEY = 'sap-cn41-theme';
 
@@ -87,6 +86,31 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [logoError, setLogoError] = useState(false);
+  const [logoTimestamp, setLogoTimestamp] = useState<string>('');
+  const [companyName, setCompanyName] = useState('DETASAD');
+  const [companySubtext, setCompanySubtext] = useState('Control Center');
+
+  useEffect(() => {
+    setLogoTimestamp(window.localStorage.getItem('logo_timestamp') || '');
+    setCompanyName(window.localStorage.getItem('company_name') || 'DETASAD');
+    setCompanySubtext(window.localStorage.getItem('company_subtext') || 'Control Center');
+
+    const handleLogoUpdate = () => {
+      setLogoTimestamp(window.localStorage.getItem('logo_timestamp') || String(Date.now()));
+      setCompanyName(window.localStorage.getItem('company_name') || 'DETASAD');
+      setCompanySubtext(window.localStorage.getItem('company_subtext') || 'Control Center');
+      setLogoError(false);
+    };
+    window.addEventListener('logo-updated', handleLogoUpdate);
+    return () => {
+      window.removeEventListener('logo-updated', handleLogoUpdate);
+    };
+  }, []);
+
+  const logoUrl = LOGO_BASE_SRC
+    ? (logoTimestamp ? `${LOGO_BASE_SRC}?t=${logoTimestamp}` : LOGO_BASE_SRC)
+    : null;
 
   useEffect(() => {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -157,50 +181,56 @@ export function Sidebar({
           open ? 'px-5' : 'px-0 justify-center',
         )}>
           {open ? (
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="relative w-10 h-10 flex-none">
-                {LOGO_SRC ? (
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="relative w-12 h-12 flex-none">
+                {logoUrl && !logoError ? (
                   <div className={cn(
-                    'w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center',
+                    'w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center',
                     isDark ? 'border border-white/15 bg-white/10' : 'border border-line bg-panel',
                   )}>
-                    <Image src={LOGO_SRC} alt="Logo" width={40} height={40}
-                      className="object-contain w-full h-full"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <Image src={logoUrl} alt="Logo" width={48} height={48}
+                      className="object-contain w-full h-full p-1"
+                      unoptimized
+                      onError={() => { setLogoError(true); }} />
                   </div>
                 ) : (
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-[0_4px_14px_rgba(99,102,241,0.4)]">
-                    <span className="text-[17px] font-black text-white tracking-tight">D</span>
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-[0_4px_14px_rgba(99,102,241,0.4)]">
+                    <span className="text-[19px] font-black text-white tracking-tight">
+                      {companyName ? companyName.charAt(0).toUpperCase() : 'D'}
+                    </span>
                   </div>
                 )}
                 <span className={cn(
-                  'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2',
+                  'absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2',
                   isDark ? 'border-[#0d1117]' : 'border-white',
                 )} />
               </div>
               <div>
-                <p className="sidebar-heading text-[14.5px] font-extrabold tracking-tight leading-none">DETASAD</p>
-                <p className="sidebar-subtext text-[9px] font-bold uppercase mt-0.5">Control Center</p>
+                <p className="sidebar-heading text-[17px] font-extrabold tracking-tight leading-none">{companyName}</p>
+                <p className="sidebar-subtext text-[10px] font-bold uppercase mt-1 tracking-wider">{companySubtext}</p>
               </div>
             </div>
           ) : (
-            <div className="relative w-10 h-10">
-              {LOGO_SRC ? (
+            <div className="relative w-12 h-12">
+              {logoUrl && !logoError ? (
                 <div className={cn(
-                  'w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center',
+                  'w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center',
                   isDark ? 'border border-white/15 bg-white/10' : 'border border-line bg-panel',
                 )}>
-                  <Image src={LOGO_SRC} alt="Logo" width={40} height={40}
-                    className="object-contain w-full h-full"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <Image src={logoUrl} alt="Logo" width={48} height={48}
+                    className="object-contain w-full h-full p-1"
+                    unoptimized
+                    onError={() => { setLogoError(true); }} />
                 </div>
               ) : (
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-[0_4px_14px_rgba(99,102,241,0.35)]">
-                  <span className="text-[17px] font-black text-white tracking-tight">D</span>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-[0_4px_14px_rgba(99,102,241,0.35)]">
+                  <span className="text-[19px] font-black text-white tracking-tight">
+                    {companyName ? companyName.charAt(0).toUpperCase() : 'D'}
+                  </span>
                 </div>
               )}
               <span className={cn(
-                'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2',
+                'absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2',
                 isDark ? 'border-[#0d1117]' : 'border-white',
               )} />
             </div>

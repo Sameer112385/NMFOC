@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nmfoc-dev",
+      "runtimeExecutable": "D:\\Antigravity\\NMFOC Dashboard\\node-v24.16.0-win-x64\\node-v24.16.0-win-x64\\node.exe",
+      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

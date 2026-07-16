@@ -6,7 +6,7 @@ import { DarkSelect } from "@/components/dark-select";
 import { surfaceCard } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-type SourceType = "cn41" | "gr55" | "sales_order";
+type SourceType = "cn41" | "gr55" | "sales_order" | "historical_revenue";
 type UploadItem = { file: File; sourceType: SourceType };
 
 export function Cn41UploadForm({ projects }: { projects: { id: string; project_name: string }[] }) {
@@ -20,11 +20,12 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
     cn41: null,
     gr55: null,
     sales_order: null,
+    historical_revenue: null,
   });
 
   async function loadLatestSources(targetProjectId = projectId) {
     if (!targetProjectId) {
-      setLatestSources({ cn41: null, gr55: null, sales_order: null });
+      setLatestSources({ cn41: null, gr55: null, sales_order: null, historical_revenue: null });
       return;
     }
 
@@ -38,12 +39,13 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
       cn41: payload.latest?.cn41 ?? null,
       gr55: payload.latest?.gr55 ?? null,
       sales_order: payload.latest?.sales_order ?? null,
+      historical_revenue: payload.latest?.historical_revenue ?? null,
     });
   }
 
   useEffect(() => {
     loadLatestSources(projectId).catch(() => {
-      setLatestSources({ cn41: null, gr55: null, sales_order: null });
+      setLatestSources({ cn41: null, gr55: null, sales_order: null, historical_revenue: null });
     });
   }, [projectId]);
 
@@ -110,7 +112,7 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
 
     setMessage(`Recalculated ${payload.rowCount ?? 0} revenue WBS row(s) from the current source data.`);
     await loadLatestSources(projectId);
-    router.refresh();
+    window.location.reload();
   }
 
   return (
@@ -119,7 +121,7 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
         <div className="section-kicker text-accent font-bold tracking-[0.12em]">Data Ingestion</div>
         <h3 className="mt-1 text-lg font-bold text-text">Upload Financial Source</h3>
         <p className="mt-1 text-xs text-muted/90 font-medium">
-          Upload CN41 for planned cost, GR55 for actual cost, or the Sales Order report for planned revenue.
+          Upload CN41 for planned cost, GR55 for actual cost, Sales Order report for planned revenue, or Historical pre-2026 revenue.
         </p>
       </div>
 
@@ -155,10 +157,11 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
 
       <div className="space-y-3">
         <div className="text-xs font-bold text-muted uppercase tracking-wider">Latest Source Versions</div>
-        <div className="grid gap-3 rounded-xl border border-line bg-panel2/10 p-4 sm:grid-cols-3">
+        <div className="grid gap-3 rounded-xl border border-line bg-panel2/10 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <SourceVersionLabel label="CN41" source={latestSources.cn41} />
           <SourceVersionLabel label="GR55" source={latestSources.gr55} />
           <SourceVersionLabel label="Sales Order" source={latestSources.sales_order} />
+          <SourceVersionLabel label="Hist. Revenue" source={latestSources.historical_revenue} />
         </div>
 
         {items.length ? (
@@ -182,6 +185,7 @@ export function Cn41UploadForm({ projects }: { projects: { id: string; project_n
                     <option value="cn41">CN41 planned cost</option>
                     <option value="gr55">GR55 actual cost</option>
                     <option value="sales_order">Sales order revenue</option>
+                    <option value="historical_revenue">Historical pre-2026 revenue</option>
                   </select>
                   <button
                     type="button"
@@ -249,6 +253,7 @@ function SourceVersionLabel({ label, source }: { label: string; source: UploadLa
 
 function inferSourceType(name: string): SourceType {
   const lowered = name.toLowerCase();
+  if (lowered.includes("historical") || lowered.includes("hist") || lowered.includes("rev")) return "historical_revenue";
   if (lowered.includes("gr55")) return "gr55";
   if (lowered.includes("sales") || lowered.includes("order") || lowered.includes("so")) return "sales_order";
   return "cn41";

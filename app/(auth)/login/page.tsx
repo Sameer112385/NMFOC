@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { ChevronDown, ChevronUp, Database } from 'lucide-react';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(false);
+  const [companyName, setCompanyName] = useState('DETASAD');
+  const [companySubtext, setCompanySubtext] = useState('Detecon Al Saudia');
+  const [logoTimestamp, setLogoTimestamp] = useState<string>('');
+  const [logoError, setLogoError] = useState(false);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const baseLogoUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/cn41-files/global/login_logo.png` : '';
+  const logoUrl = baseLogoUrl ? (logoTimestamp ? `${baseLogoUrl}?t=${logoTimestamp}` : baseLogoUrl) : null;
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [showDbPanel, setShowDbPanel] = useState(false);
@@ -22,6 +31,10 @@ export default function LoginPage() {
   const [dbMessage, setDbMessage] = useState('');
 
   useEffect(() => {
+    // Load branding settings from localStorage
+    setCompanyName(window.localStorage.getItem('company_name') || 'DETASAD');
+    setCompanySubtext(window.localStorage.getItem('company_subtext') || 'Detecon Al Saudia');
+    setLogoTimestamp(window.localStorage.getItem('login_logo_timestamp') || '');
     // Clear demo session on mount (logout)
     window.localStorage.removeItem('sap-cn41-demo-session');
     document.cookie = 'sap-cn41-demo-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
@@ -187,16 +200,32 @@ export default function LoginPage() {
       <div className="relative w-full max-w-[420px] rounded-2xl border border-line bg-panel/60 p-8 shadow-glow backdrop-blur-xl transition-all duration-300 hover:shadow-card flex flex-col items-center">
         {/* Detasad Branding */}
         <div className="flex flex-col items-center text-center">
-          <div className="text-3xl font-black tracking-[0.2em] bg-gradient-to-r from-accent via-cyan-400 to-blue-500 bg-clip-text text-transparent select-none">
-            DETASAD
+          {/* Logo container */}
+          <div className="w-16 h-16 rounded-2xl overflow-hidden border border-line bg-panel2 flex items-center justify-center relative mb-4 shadow-sm">
+            {logoUrl && !logoError ? (
+              <Image
+                src={logoUrl}
+                alt="Company Logo"
+                width={64}
+                height={64}
+                className="object-contain w-full h-full p-2"
+                unoptimized
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="text-3xl font-black text-accent bg-gradient-to-r from-accent to-cyan-400 bg-clip-text text-transparent select-none">
+                {companyName ? companyName.charAt(0).toUpperCase() : 'D'}
+              </div>
+            )}
           </div>
-          <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.3em] text-muted/70">
-            Detecon Al Saudia
+          
+          <div className="text-3xl font-black tracking-[0.2em] select-none uppercase" style={{ color: '#005B7F' }}>
+            {companyName}
           </div>
-          <h1 className="mt-6 text-xl font-bold tracking-tight text-text">
-            NMFOC Dashboard
-          </h1>
-          <p className="mt-2 text-xs text-muted/80 font-medium">
+          <div className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.3em] text-muted/70">
+            {companySubtext}
+          </div>
+          <p className="mt-6 text-xs text-muted/80 font-medium">
             {isSignUp ? "Create a secure account to get started." : "Sign in to access project baselines, updates, and simulations."}
           </p>
         </div>

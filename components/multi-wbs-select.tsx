@@ -87,14 +87,18 @@ export function MultiWbsSelect({
 
   const selectedDisplayLabel = useMemo(() => {
     if (selectedValues.length === 0) return placeholder;
-    if (selectedValues.length === options.length) return placeholder.toLowerCase().includes('po') ? 'All POs' : 'All WBS Elements';
+    if (selectedValues.length === options.length) {
+      if (placeholder.toLowerCase().includes('po')) return 'All POs';
+      if (placeholder.toLowerCase().includes('category')) return 'All Categories';
+      return 'All WBS Elements';
+    }
     if (selectedValues.length === 1) {
       const found = options.find((o) => o.value === selectedValues[0]);
       return found ? found.label : selectedValues[0];
     }
-    return placeholder.toLowerCase().includes('po') 
-      ? `${selectedValues.length} POs Selected`
-      : `${selectedValues.length} WBS Selected`;
+    if (placeholder.toLowerCase().includes('po')) return `${selectedValues.length} POs Selected`;
+    if (placeholder.toLowerCase().includes('category')) return `${selectedValues.length} Categories Selected`;
+    return `${selectedValues.length} WBS Selected`;
   }, [selectedValues, options, placeholder]);
 
   return (
@@ -125,7 +129,7 @@ export function MultiWbsSelect({
           <ChevronDown className={cn('h-3.5 w-3.5 text-muted/80 transition-transform', open && 'rotate-180')} />
         </div>
       </button>
-
+ 
       {open ? (
         <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-line bg-panel shadow-md max-h-72 flex flex-col">
           <div className="border-b border-line/75 p-2 shrink-0">
@@ -135,7 +139,13 @@ export function MultiWbsSelect({
                 ref={searchRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder={placeholder.toLowerCase().includes('po') ? "Type to search PO..." : "Type to search WBS..."}
+                placeholder={
+                  placeholder.toLowerCase().includes('po')
+                    ? "Type to search PO..."
+                    : placeholder.toLowerCase().includes('category')
+                    ? "Type to search Category..."
+                    : "Type to search WBS..."
+                }
                 className="w-full bg-transparent text-xs text-text outline-none placeholder:text-muted/60"
               />
             </div>
@@ -193,7 +203,11 @@ export function MultiWbsSelect({
             })}
             {!filteredOptions.length ? (
               <li className="px-3.5 py-6 text-center text-xs text-muted/65">
-                No WBS elements found
+                {placeholder.toLowerCase().includes('po')
+                  ? "No POs found"
+                  : placeholder.toLowerCase().includes('category')
+                  ? "No categories found"
+                  : "No WBS elements found"}
               </li>
             ) : null}
           </ul>

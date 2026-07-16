@@ -115,6 +115,21 @@ export type Gr55CostRow = {
   raw_data_json: Record<string, string | number | boolean | null>;
 };
 
+export type HistoricalRevenueRow = {
+  id?: string;
+  project_id: string;
+  upload_id?: string | null;
+  posting_date: string;
+  fiscal_year?: number | null;
+  fiscal_period?: number | null;
+  wbs_code: string;
+  wbs_description?: string | null;
+  cost_element: string;
+  amount: number;
+  currency?: string | null;
+  raw_data_json: Record<string, string | number | boolean | null>;
+};
+
 export type SalesOrderRevenueRow = {
   id?: string;
   project_id: string;

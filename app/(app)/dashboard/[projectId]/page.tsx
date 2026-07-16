@@ -10,7 +10,8 @@ import {
   getRevenueRows,
   getProjects,
   getProjectCostElementControl,
-  getGr55Rows,
+  getGr55Summaries,
+  getHistoricalRevenueRows,
 } from '@/lib/data';
 import { DashboardClientWorkspace } from '@/components/dashboard-client-workspace';
 
@@ -30,6 +31,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
     projectWbsMaster,
     costElementControl,
     gr55Rows,
+    historicalRevenueRows,
   ] = await Promise.all([
     getProjects(),
     getRevenueGeneratingRows(projectId),
@@ -39,7 +41,8 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
     getProjectMaterialMaster(projectId),
     getProjectWbsMaster(projectId),
     getProjectCostElementControl(projectId),
-    getGr55Rows(projectId),
+    getGr55Summaries(projectId),
+    getHistoricalRevenueRows(projectId),
   ]);
 
   // Only include active and cost-included WBS elements from WBS Master
@@ -73,6 +76,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
         projectWbsMaster={projectWbsMaster}
         costElementControl={costElementControl}
         gr55Rows={gr55Rows}
+        historicalRevenueRows={historicalRevenueRows}
       />
     </PageShell>
   );

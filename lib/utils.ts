@@ -6,7 +6,13 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatCurrency(value: number | null | undefined) {
   const amount = Number(value ?? 0);
-  return `\u20C1${new Intl.NumberFormat('en-US', {
+  if (amount < 0) {
+    const formatted = new Intl.NumberFormat('en-US', {
+      maximumFractionDigits: 2,
+    }).format(Math.abs(amount));
+    return `(SAR ${formatted})`;
+  }
+  return `SAR ${new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 2,
   }).format(amount)}`;
 }
@@ -31,7 +37,10 @@ export function formatCompactNumber(value: number | null | undefined) {
 
 export function formatCompactCurrency(value: number | null | undefined) {
   const amount = Number(value ?? 0);
-  return `\u20C1${formatCompactNumber(amount).replace(/^-/, '-')}`;
+  if (amount < 0) {
+    return `(SAR ${formatCompactNumber(Math.abs(amount))})`;
+  }
+  return `SAR ${formatCompactNumber(amount)}`;
 }
 
 export function formatPercent(value: number | null | undefined) {

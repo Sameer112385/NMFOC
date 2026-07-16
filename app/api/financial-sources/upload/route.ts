@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { fetchAllSupabaseRows } from '@/lib/supabase/pagination';
-import { buildFinancialRowsFromSources } from '@/lib/financial-engine';
+import { buildFinancialRowsFromSources, syncGr55Summaries } from '@/lib/financial-engine';
 import { truncateFinancialOutput } from '@/lib/financial-format';
-import { parseCn41File, parseGr55File, parseSalesOrderFile } from '@/lib/financial-imports';
+import { parseCn41File, parseGr55File, parseHistoricalRevenueFile, parseSalesOrderFile } from '@/lib/financial-imports';
 import { createSnapshot, buildRiskAlerts } from '@/lib/calculations';
 import {
   isLocalDbMode,
@@ -13,10 +13,11 @@ import {
   readLatestSourceUploads,
   saveCn41Upload,
   saveGr55Upload,
+  saveHistoricalRevenueUpload,
   saveSalesOrderUpload,
 } from '@/lib/local-db';
 
-type SourceType = 'cn41' | 'gr55' | 'sales_order';
+type SourceType = 'cn41' | 'gr55' | 'sales_order' | 'historical_revenue';
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const sourceTypes = formData
     .getAll('source_type')
     .map((value) => String(value ?? '').trim().toLowerCase())
-    .filter((value): value is SourceType => ['cn41', 'gr55', 'sales_order'].includes(value));
+    .filter((value): value is SourceType => ['cn41', 'gr55', 'sales_order', 'historical_revenue'].includes(value));
   const files = formData.getAll('file').filter((entry): entry is File => entry instanceof File);
 
   if (!projectId) {
@@ -58,6 +59,10 @@ export async function POST(request: Request) {
       }
       if (sourceType === 'gr55') {
         results.push(await handleGr55Upload({ file, projectId, localMode, versionNo }));
+        continue;
+      }
+      if (sourceType === 'historical_revenue') {
+        results.push(await handleHistoricalRevenueUpload({ file, projectId, localMode, versionNo }));
         continue;
       }
       results.push(await handleSalesOrderUpload({ file, projectId, localMode, versionNo }));
@@ -250,9 +255,91 @@ async function handleGr55Upload({ file, projectId, localMode, versionNo }: { fil
   }
 
   await syncProjectCostElementsFromGr55Rows(supabase, projectId, parsed.rows);
+  
+  const rowsWithUploadId = parsed.rows.map(row => ({
+    ...row,
+    project_id: projectId,
+    upload_id: uploadRow.id
+  }));
+  await syncGr55Summaries(supabase, projectId, rowsWithUploadId);
 
   const financialRows = await buildFinancialRowsFromSourcesForSupabase(supabase, projectId, uploadRow.id);
   return { sourceType: 'gr55', upload: uploadRow, projectId, rowCount: parsed.rows.length, revenueRowCount: financialRows.length };
+}
+
+async function handleHistoricalRevenueUpload({ file, projectId, localMode, versionNo }: { file: File; projectId: string; localMode: boolean; versionNo: number }) {
+  const parsed = await parseHistoricalRevenueFile(file);
+  if (localMode) {
+    const upload = await saveHistoricalRevenueUpload({
+      project_id: projectId,
+      file_name: file.name,
+      file_url: `local://${projectId}/${Date.now()}-${file.name}`,
+      version_no: versionNo,
+      rows: parsed.rows,
+    });
+    return { sourceType: 'historical_revenue', upload, projectId, rowCount: parsed.rows.length };
+  }
+
+  const supabase = await createSupabaseAdminClient();
+  const buffer = await file.arrayBuffer();
+  const storagePath = `historical-revenue/${projectId}/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage.from('cn41-files').upload(storagePath, new Uint8Array(buffer), {
+    contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    upsert: true,
+  });
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { data: publicUrlData } = supabase.storage.from('cn41-files').getPublicUrl(storagePath);
+  const fileUrl = publicUrlData.publicUrl;
+
+  // Clear previous historical revenue rows and upload records to avoid duplicate postings
+  await supabase.from('historical_revenue_rows').delete().eq('project_id', projectId);
+  await supabase.from('historical_revenue_uploads').delete().eq('project_id', projectId);
+
+  const { data: uploadRow, error: uploadRowError } = await supabase
+    .from('historical_revenue_uploads')
+    .insert({
+      project_id: projectId,
+      file_name: file.name,
+      file_url: fileUrl,
+      upload_date: new Date().toISOString(),
+      version_no: versionNo,
+      is_latest: true,
+    })
+    .select()
+    .single();
+  if (uploadRowError) throw new Error(uploadRowError.message);
+
+  const chunkSize = 2000;
+  const parallelChunks = 4;
+  for (let i = 0; i < parsed.rows.length; i += chunkSize * parallelChunks) {
+    const batch = [];
+    for (let offset = 0; offset < parallelChunks; offset += 1) {
+      const start = i + offset * chunkSize;
+      const chunk = parsed.rows.slice(start, start + chunkSize).map((row) => ({
+        ...row,
+        upload_id: uploadRow.id,
+        project_id: projectId,
+      }));
+      if (chunk.length) {
+        batch.push(
+          supabase
+            .from('historical_revenue_rows')
+            .insert(chunk)
+            .then(({ error }) => ({ start, error })),
+        );
+      }
+    }
+
+    const results = await Promise.all(batch);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) {
+      throw new Error(`Failed to insert historical revenue rows chunk at index ${failed.start}: ${failed.error.message}`);
+    }
+  }
+
+  const financialRows = await buildFinancialRowsFromSourcesForSupabase(supabase, projectId, uploadRow.id);
+  return { sourceType: 'historical_revenue', upload: uploadRow, projectId, rowCount: parsed.rows.length, revenueRowCount: financialRows.length };
 }
 
 async function handleSalesOrderUpload({ file, projectId, localMode, versionNo }: { file: File; projectId: string; localMode: boolean; versionNo: number }) {
@@ -356,6 +443,7 @@ async function buildFinancialRowsFromSourcesForSupabase(supabase: Awaited<Return
   const [
     cn41Rows,
     gr55Rows,
+    histRevRows,
     salesRows,
     updates,
     existingRows,
@@ -364,6 +452,7 @@ async function buildFinancialRowsFromSourcesForSupabase(supabase: Awaited<Return
   ] = await Promise.all([
     fetchAllSupabaseRows<any>(() => supabase.from('cn41_rows').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('gr55_rows').select('*').eq('project_id', projectId)),
+    fetchAllSupabaseRows<any>(() => supabase.from('historical_revenue_rows').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('sales_order_rows').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('pm_daily_updates').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('revenue_wbs').select('*').eq('project_id', projectId)),
@@ -375,6 +464,7 @@ async function buildFinancialRowsFromSourcesForSupabase(supabase: Awaited<Return
     projectId,
     cn41Rows: cn41Rows as any,
     gr55Rows: gr55Rows as any,
+    historicalRevenueRows: histRevRows as any,
     salesOrderRows: salesRows as any,
     updates: updates as any,
     existingRows: existingRows as any,
@@ -438,7 +528,13 @@ async function getNextVersionNo({
 
   if (!supabase) return 1;
   const tableName =
-    sourceType === 'cn41' ? 'cn41_uploads' : sourceType === 'gr55' ? 'gr55_uploads' : 'sales_order_uploads';
+    sourceType === 'cn41'
+      ? 'cn41_uploads'
+      : sourceType === 'gr55'
+        ? 'gr55_uploads'
+        : sourceType === 'historical_revenue'
+          ? 'historical_revenue_uploads'
+          : 'sales_order_uploads';
   const { data } = await supabase
     .from(tableName)
     .select('version_no')

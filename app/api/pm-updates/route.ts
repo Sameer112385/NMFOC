@@ -299,6 +299,7 @@ async function refreshProjectFinancialOutputs(supabase: Awaited<ReturnType<typeo
     existingRows,
     projectWbsMaster,
     projectCostElements,
+    historicalRevenueRows,
   ] = await Promise.all([
     fetchAllSupabaseRows<any>(() => supabase.from('cn41_rows').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('gr55_rows').select('*').eq('project_id', projectId)),
@@ -307,12 +308,14 @@ async function refreshProjectFinancialOutputs(supabase: Awaited<ReturnType<typeo
     fetchAllSupabaseRows<any>(() => supabase.from('revenue_wbs').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('project_wbs_master').select('*').eq('project_id', projectId)),
     fetchAllSupabaseRows<any>(() => supabase.from('project_cost_element_control').select('*').eq('project_id', projectId)),
+    fetchAllSupabaseRows<any>(() => supabase.from('historical_revenue_rows').select('*').eq('project_id', projectId)),
   ]);
 
   const financialRows = buildFinancialRowsFromSources({
     projectId,
     cn41Rows: cn41Rows as any,
     gr55Rows: gr55Rows as any,
+    historicalRevenueRows: historicalRevenueRows as any,
     salesOrderRows: salesRows as any,
     updates: updates as any,
     existingRows: existingRows as any,

@@ -3,6 +3,7 @@ import { PageShell, Badge, StatRow } from '@/components/ui';
 import { SupabaseConnectionPanel } from '@/components/supabase-connection-panel';
 import { UserManagementPanel } from '@/components/user-management-panel';
 import { AdminResetPanel } from '@/components/admin-reset-panel';
+import { CompanyLogoPanel } from '@/components/company-logo-panel';
 import { getCurrentAppUser, canAccessSettings } from '@/lib/current-user';
 
 export default async function SettingsPage() {
@@ -19,8 +20,9 @@ export default async function SettingsPage() {
   ];
 
   return (
-    <PageShell title="Settings" subtitle="Environment checks, role notes, and deployment readiness for Vercel.">
+    <PageShell title="Settings" subtitle="Branding configuration, environment checks, role notes, and user profiles.">
       <div className="grid gap-4 xl:grid-cols-2">
+        <CompanyLogoPanel />
         <SupabaseConnectionPanel />
         <UserManagementPanel />
         <AdminResetPanel canReset={canReset} />

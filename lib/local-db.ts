@@ -5,6 +5,7 @@ import { buildRiskAlerts, createSnapshot } from '@/lib/calculations';
 import type {
   DailyUpdate,
   Gr55CostRow,
+  HistoricalRevenueRow,
   SalesOrderRevenueRow,
   Project,
   ProjectManpowerRate,
@@ -23,6 +24,8 @@ type LocalDb = {
   cn41_rows: Array<any>;
   gr55_uploads: Array<any>;
   gr55_rows: Gr55CostRow[];
+  historical_revenue_uploads: Array<any>;
+  historical_revenue_rows: HistoricalRevenueRow[];
   sales_order_uploads: Array<any>;
   sales_order_rows: SalesOrderRevenueRow[];
   revenue_wbs: RevenueWBS[];
@@ -55,6 +58,8 @@ async function ensureDb(): Promise<LocalDb> {
       cn41_rows: parsed.cn41_rows ?? [],
       gr55_uploads: parsed.gr55_uploads ?? [],
       gr55_rows: parsed.gr55_rows ?? [],
+      historical_revenue_uploads: parsed.historical_revenue_uploads ?? [],
+      historical_revenue_rows: parsed.historical_revenue_rows ?? [],
       sales_order_uploads: parsed.sales_order_uploads ?? [],
       sales_order_rows: parsed.sales_order_rows ?? [],
       revenue_wbs: parsed.revenue_wbs ?? [],
@@ -100,6 +105,8 @@ async function ensureDb(): Promise<LocalDb> {
       cn41_rows: [],
       gr55_uploads: [],
       gr55_rows: [],
+      historical_revenue_uploads: [],
+      historical_revenue_rows: [],
       sales_order_uploads: [],
       sales_order_rows: [],
       revenue_wbs: [],
@@ -161,6 +168,8 @@ export async function deleteProject(projectId: string) {
   db.cn41_rows = db.cn41_rows.filter((x) => x.project_id !== projectId);
   db.gr55_uploads = db.gr55_uploads.filter((x) => x.project_id !== projectId);
   db.gr55_rows = db.gr55_rows.filter((x) => x.project_id !== projectId);
+  db.historical_revenue_uploads = db.historical_revenue_uploads.filter((x) => x.project_id !== projectId);
+  db.historical_revenue_rows = db.historical_revenue_rows.filter((x) => x.project_id !== projectId);
   db.sales_order_uploads = db.sales_order_uploads.filter((x) => x.project_id !== projectId);
   db.sales_order_rows = db.sales_order_rows.filter((x) => x.project_id !== projectId);
   db.revenue_wbs = db.revenue_wbs.filter((x) => x.project_id !== projectId);
@@ -182,6 +191,8 @@ export async function resetLocalAppData() {
   db.cn41_rows = [];
   db.gr55_uploads = [];
   db.gr55_rows = [];
+  db.historical_revenue_uploads = [];
+  db.historical_revenue_rows = [];
   db.sales_order_uploads = [];
   db.sales_order_rows = [];
   db.revenue_wbs = [];
@@ -204,6 +215,8 @@ export async function resetLocalEverything() {
   db.cn41_rows = [];
   db.gr55_uploads = [];
   db.gr55_rows = [];
+  db.historical_revenue_uploads = [];
+  db.historical_revenue_rows = [];
   db.sales_order_uploads = [];
   db.sales_order_rows = [];
   db.revenue_wbs = [];
@@ -309,6 +322,7 @@ export async function readLatestUploadDate(projectId: string) {
   const candidates = [
     ...db.cn41_uploads.filter((x) => x.project_id === projectId).map((x) => x.upload_date),
     ...db.gr55_uploads.filter((x) => x.project_id === projectId).map((x) => x.upload_date),
+    ...db.historical_revenue_uploads.filter((x) => x.project_id === projectId).map((x) => x.upload_date),
     ...db.sales_order_uploads.filter((x) => x.project_id === projectId).map((x) => x.upload_date),
   ].filter(Boolean) as string[];
   if (!candidates.length) return null;
@@ -324,10 +338,18 @@ export async function readLatestSourceUploads(projectId: string) {
     gr55: db.gr55_uploads
       .filter((row) => row.project_id === projectId)
       .sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())[0] ?? null,
+    historical_revenue: db.historical_revenue_uploads
+      .filter((row) => row.project_id === projectId)
+      .sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())[0] ?? null,
     sales_order: db.sales_order_uploads
       .filter((row) => row.project_id === projectId)
       .sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())[0] ?? null,
   };
+}
+
+export async function readHistoricalRevenueRows(projectId?: string) {
+  const db = await ensureDb();
+  return projectId ? db.historical_revenue_rows.filter((x) => x.project_id === projectId) : db.historical_revenue_rows;
 }
 
 export async function readLatestGr55UploadDate(projectId: string) {
@@ -411,6 +433,34 @@ export async function saveGr55Upload(input: {
   return upload;
 }
 
+export async function saveHistoricalRevenueUpload(input: {
+  project_id: string;
+  file_name: string;
+  file_url: string;
+  version_no: number;
+  rows: Array<any>;
+}) {
+  const db = await ensureDb();
+  const upload = {
+    id: crypto.randomUUID(),
+    project_id: input.project_id,
+    file_name: input.file_name,
+    file_url: input.file_url,
+    upload_date: new Date().toISOString(),
+    uploaded_by: null,
+    version_no: input.version_no,
+    is_latest: true,
+  };
+  db.historical_revenue_uploads = db.historical_revenue_uploads.filter((x) => x.project_id !== input.project_id);
+  db.historical_revenue_uploads.unshift(upload);
+  db.historical_revenue_rows = db.historical_revenue_rows.filter((row) => row.project_id !== input.project_id);
+  db.historical_revenue_rows.push(...input.rows.map((row) => ({ ...row, upload_id: upload.id, project_id: input.project_id })));
+  await rebuildRevenueRows(db);
+  await refreshComputedArtifacts(db, input.project_id, upload.id);
+  await saveDb(db);
+  return upload;
+}
+
 export async function saveSalesOrderUpload(input: {
   project_id: string;
   file_name: string;
@@ -466,6 +516,7 @@ async function rebuildRevenueRows(db: LocalDb) {
   const projectIds = new Set([
     ...db.cn41_rows.map((row) => row.project_id),
     ...db.gr55_rows.map((row) => row.project_id),
+    ...db.historical_revenue_rows.map((row) => row.project_id),
     ...db.sales_order_rows.map((row) => row.project_id),
     ...db.pm_daily_updates.map((row) => row.project_id),
     ...db.project_wbs_master.map((row) => row.project_id),
@@ -475,6 +526,7 @@ async function rebuildRevenueRows(db: LocalDb) {
   for (const projectId of projectIds) {
     const projectCn41Rows = db.cn41_rows.filter((row) => row.project_id === projectId);
     const projectGr55Rows = db.gr55_rows.filter((row) => row.project_id === projectId);
+    const projectHistRevRows = db.historical_revenue_rows.filter((row) => row.project_id === projectId);
     const projectSalesRows = db.sales_order_rows.filter((row) => row.project_id === projectId);
     const projectUpdates = db.pm_daily_updates.filter((row) => row.project_id === projectId);
     const projectWbsMaster = db.project_wbs_master.filter((row) => row.project_id === projectId);
@@ -484,6 +536,7 @@ async function rebuildRevenueRows(db: LocalDb) {
       projectId,
       cn41Rows: projectCn41Rows as any,
       gr55Rows: projectGr55Rows as any,
+      historicalRevenueRows: projectHistRevRows as any,
       salesOrderRows: projectSalesRows as any,
       updates: projectUpdates as any,
       existingRows: previousRows as any,

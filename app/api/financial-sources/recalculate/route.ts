@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { fetchAllSupabaseRows } from '@/lib/supabase/pagination';
-import { buildFinancialRowsFromSources } from '@/lib/financial-engine';
+import { buildFinancialRowsFromSources, syncGr55Summaries } from '@/lib/financial-engine';
 import { truncateFinancialOutput } from '@/lib/financial-format';
 import { createSnapshot, buildRiskAlerts } from '@/lib/calculations';
 import { isLocalDbMode, readProjects as readLocalProjects, recalculateLocalFinancials } from '@/lib/local-db';
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       existingRows,
       projectWbsMaster,
       projectCostElements,
+      historicalRevenueRows,
     ] = await Promise.all([
       cn41UploadId
         ? fetchAllSupabaseRows<any>(() => supabase.from('cn41_rows').select('*').eq('project_id', projectId).eq('upload_id', cn41UploadId))
@@ -59,14 +60,17 @@ export async function POST(request: Request) {
       fetchAllSupabaseRows<any>(() => supabase.from('revenue_wbs').select('*').eq('project_id', projectId)),
       fetchAllSupabaseRows<any>(() => supabase.from('project_wbs_master').select('*').eq('project_id', projectId)),
       fetchAllSupabaseRows<any>(() => supabase.from('project_cost_element_control').select('*').eq('project_id', projectId)),
+      fetchAllSupabaseRows<any>(() => supabase.from('historical_revenue_rows').select('*').eq('project_id', projectId)),
     ]);
 
     await syncProjectCostElementsFromGr55Rows(supabase, projectId, gr55Rows as any);
+    await syncGr55Summaries(supabase, projectId, gr55Rows as any);
 
     const financialRows = buildFinancialRowsFromSources({
       projectId,
       cn41Rows: cn41Rows as any,
       gr55Rows: gr55Rows as any,
+      historicalRevenueRows: historicalRevenueRows as any,
       salesOrderRows: salesRows as any,
       updates: updates as any,
       existingRows: existingRows as any,

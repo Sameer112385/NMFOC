@@ -23,6 +23,7 @@ import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import type {
   DailyUpdate,
   Gr55CostRow,
+  HistoricalRevenueRow,
   Project,
   ProjectCostElementControl,
   ProjectManpowerRate,
@@ -104,6 +105,7 @@ interface DashboardClientWorkspaceProps {
   projectWbsMaster: ProjectWbsMaster[];
   costElementControl: ProjectCostElementControl[];
   gr55Rows: Gr55CostRow[];
+  historicalRevenueRows?: HistoricalRevenueRow[];
 }
 
 export function DashboardClientWorkspace({
@@ -118,6 +120,7 @@ export function DashboardClientWorkspace({
   projectWbsMaster,
   costElementControl,
   gr55Rows,
+  historicalRevenueRows = [],
 }: DashboardClientWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
@@ -224,6 +227,7 @@ export function DashboardClientWorkspace({
       projectId: project.id,
       costRows: allWbsRows,
       gr55Rows,
+      historicalRevenueRows,
       updates,
       wbsMaster: projectWbsMaster,
       costElementControl,
@@ -231,7 +235,7 @@ export function DashboardClientWorkspace({
       periodType: 'month',
       selectedPos,
     });
-  }, [project.id, allWbsRows, gr55Rows, updates, projectWbsMaster, costElementControl, selectedWbs, selectedPos]);
+  }, [project.id, allWbsRows, gr55Rows, historicalRevenueRows, updates, projectWbsMaster, costElementControl, selectedWbs, selectedPos]);
 
   const risks = buildRiskAlerts(filteredRevenueRows);
   const riskChartData = Array.from(
@@ -305,6 +309,7 @@ export function DashboardClientWorkspace({
               icon={TrendingUp}
               tone="success"
               group="revenue"
+              hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC"
             />
 
             {/* Margin & Progress Cards */}
@@ -477,6 +482,11 @@ export function DashboardClientWorkspace({
                     selectedPos={selectedPos}
                     setSelectedPos={setSelectedPos}
                     poOptions={poOptions}
+                    gr55Rows={gr55Rows}
+                    historicalRevenueRows={historicalRevenueRows}
+                    updates={updates}
+                    projectWbsMaster={projectWbsMaster}
+                    costElementControl={costElementControl}
                   />
                 </div>
               </div>
@@ -559,6 +569,7 @@ export function DashboardClientWorkspace({
           projects={projects}
           costRows={allWbsRows}
           gr55Rows={gr55Rows}
+          historicalRevenueRows={historicalRevenueRows}
           updates={updates}
           wbsMaster={projectWbsMaster}
           costElementControl={costElementControl}

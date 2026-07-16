@@ -1,4 +1,4 @@
-import type { CN41Row, DailyUpdate, Gr55CostRow, ProjectCostElementControl, ProjectWbsMaster, RevenueWBS, SalesOrderRevenueRow } from '@/lib/types';
+import type { CN41Row, DailyUpdate, Gr55CostRow, HistoricalRevenueRow, ProjectCostElementControl, ProjectWbsMaster, RevenueWBS, SalesOrderRevenueRow } from '@/lib/types';
 import { buildFinancialWbsRow } from '@/lib/calculations';
 import { isWbsElementObjectType } from '@/lib/cn41';
 import { safeNumber } from '@/lib/utils';
@@ -7,6 +7,7 @@ type BuildFinancialRowsInput = {
   projectId: string;
   cn41Rows: CN41Row[];
   gr55Rows: Gr55CostRow[];
+  historicalRevenueRows?: HistoricalRevenueRow[];
   salesOrderRows: SalesOrderRevenueRow[];
   updates: DailyUpdate[];
   existingRows?: RevenueWBS[];
@@ -18,6 +19,7 @@ export function buildFinancialRowsFromSources({
   projectId,
   cn41Rows,
   gr55Rows,
+  historicalRevenueRows = [],
   salesOrderRows,
   updates,
   existingRows = [],
@@ -65,6 +67,7 @@ export function buildFinancialRowsFromSources({
     });
   }
 
+  // Filter actual cost gr55Rows: exclude designated revenue GLs
   const actualByCode = groupByCode(
     gr55Rows.filter((row) => {
       const code = normalizeCode(String(row.wbs_code ?? '').trim());
@@ -74,11 +77,30 @@ export function buildFinancialRowsFromSources({
       } else if (config && config.is_active === false) {
         return false;
       }
+      
+      const costEl = normalizeCostElement(String(row.cost_element ?? '').trim());
+      if (['400110', '400119', '400210', '400310'].includes(costEl)) return false; // Exclude revenue GLs from actual costs
+
       if (!isCostElementIncluded(row, costElementMap)) return false;
       return true;
     }),
     (row) => row.wbs_code,
   );
+
+  const histRevByCode = groupByCode(
+    historicalRevenueRows.filter((row) => {
+      const code = normalizeCode(String(row.wbs_code ?? '').trim());
+      const config = masterMap.get(code);
+      if (hasWbsMaster) {
+        if (config?.is_active === false) return false;
+      } else if (config && config.is_active === false) {
+        return false;
+      }
+      return true;
+    }),
+    (row) => row.wbs_code,
+  );
+
   const salesByCode = groupByCode(
     salesOrderRows.filter((row) => {
       const code = normalizeCode(String(row.wbs_code ?? '').trim());
@@ -92,9 +114,11 @@ export function buildFinancialRowsFromSources({
     }),
     (row) => row.wbs_code,
   );
+
   const codes = new Set<string>([
     ...plannedCostMap.keys(),
     ...actualByCode.keys(),
+    ...histRevByCode.keys(),
     ...salesByCode.keys(),
     ...projectWbsMaster.map((row) => normalizeCode(String(row.wbs_code ?? '').trim())),
     ...updates.map((update) => resolveUpdateWbsCode(update.revenue_wbs_id, previousIdToCode)),
@@ -107,6 +131,7 @@ export function buildFinancialRowsFromSources({
       const planned = plannedCostMap.get(code);
       const actualRows = actualByCode.get(code) ?? [];
       const salesRows = salesByCode.get(code) ?? [];
+      const histRevRows = histRevByCode.get(code) ?? [];
       const configDisplayCode = String(config?.wbs_code ?? '').trim();
       const salesDisplayCode = String(salesRows[0]?.wbs_code ?? '').trim();
       const actualDisplayCode = String(actualRows[0]?.wbs_code ?? '').trim();
@@ -114,6 +139,8 @@ export function buildFinancialRowsFromSources({
       const relatedUpdates = updates.filter((update) => resolveUpdateWbsCode(update.revenue_wbs_id, previousIdToCode) === code);
       const asOfDate = latestDate([
         ...actualRows.map((row) => row.posting_date),
+        ...gr55Rows.filter(row => normalizeCode(row.wbs_code) === code).map((row) => row.posting_date), // Include revenue GL posting dates in calculations!
+        ...historicalRevenueRows.filter(row => normalizeCode(row.wbs_code) === code).map((row) => row.posting_date),
         ...salesRows.map((row) => row.effective_date ?? null),
         ...relatedUpdates.map((update) => update.update_date),
       ]);
@@ -134,6 +161,9 @@ export function buildFinancialRowsFromSources({
 
       if (!includeInCost && !isRevenueGenerating) return null;
 
+      // Extract unfiltered GR55 rows for revenue calculations on this WBS
+      const gr55RawRowsForRevenue = gr55Rows.filter((row) => normalizeCode(row.wbs_code) === code);
+
       return buildFinancialWbsRow({
         projectId,
         wbsCode: displayCode,
@@ -143,6 +173,8 @@ export function buildFinancialRowsFromSources({
           ? salesRows.reduce((sum, row) => sum + safeNumber(row.planned_revenue) + safeNumber(row.amendment_delta), 0)
           : 0,
         actualCostRows: includeInCost && isActive ? actualRows : [],
+        historicalRevenueRows: isRevenueGenerating && isActive ? histRevRows : [],
+        gr55RawRowsForRevenue: isRevenueGenerating && isActive ? gr55RawRowsForRevenue : [],
         salesOrderRows: isRevenueGenerating && isActive ? salesRows : [],
         updates: isActive ? relatedUpdates : [],
         asOfDate,
@@ -199,3 +231,62 @@ function resolveUpdateWbsCode(revenueWbsId: string | null | undefined, previousI
   const value = String(revenueWbsId ?? '').trim();
   return normalizeCode(previousIdToCode.get(value) ?? value);
 }
+
+export async function syncGr55Summaries(
+  supabase: any,
+  projectId: string,
+  gr55Rows: any[]
+) {
+  const groups = new Map<string, any>();
+  for (const row of gr55Rows) {
+    const wbs = String(row.wbs_code || '').trim();
+    const po = String(row.purchasing_document || '').trim();
+    const cat = String(row.cost_category || '').trim();
+    const ce = String(row.cost_element || '').trim();
+    const btx = String(row.raw_data_json?.business_transaction || '').toUpperCase();
+    const date = row.posting_date ? `${row.posting_date.slice(0, 7)}-01` : '';
+    const uploadId = row.upload_id || null;
+    
+    const key = `${wbs}|${po}|${cat}|${ce}|${btx}|${date}|${uploadId}`;
+    const existing = groups.get(key);
+    const amount = Number(row.amount || 0);
+    
+    if (existing) {
+      existing.amount = existing.amount + amount;
+    } else {
+      groups.set(key, {
+        project_id: projectId,
+        upload_id: uploadId,
+        wbs_code: wbs,
+        purchasing_document: po,
+        cost_category: cat,
+        cost_element: ce,
+        posting_date: date,
+        amount: amount,
+        raw_data_json: {
+          business_transaction: btx
+        }
+      });
+    }
+  }
+  
+  const summaries = Array.from(groups.values());
+  
+  const { error: deleteError } = await supabase
+    .from('gr55_summaries')
+    .delete()
+    .eq('project_id', projectId);
+  if (deleteError) throw deleteError;
+  
+  if (summaries.length) {
+    const batchSize = 2000;
+    for (let i = 0; i < summaries.length; i += batchSize) {
+      const batch = summaries.slice(i, i + batchSize);
+      const { error: insertError } = await supabase
+        .from('gr55_summaries')
+        .insert(batch);
+      if (insertError) throw insertError;
+    }
+  }
+}
+

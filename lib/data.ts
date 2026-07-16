@@ -29,6 +29,7 @@ import {
   readRiskAlerts as readLocalRiskAlerts,
   readSalesOrderRows as readLocalSalesOrderRows,
   readGr55Rows as readLocalGr55Rows,
+  readHistoricalRevenueRows as readLocalHistoricalRevenueRows,
   readLocalUsers,
   replaceProjectSubcontracts as replaceLocalProjectSubcontracts,
   replaceProjectWbsMaster as replaceLocalProjectWbsMaster,
@@ -38,6 +39,7 @@ import {
 import type {
   DailyUpdate,
   Gr55CostRow,
+  HistoricalRevenueRow,
   Project,
   ProjectManpowerRate,
   ProjectMaterialMaster,
@@ -285,6 +287,94 @@ export async function getGr55Rows(projectId?: string): Promise<Gr55CostRow[]> {
   }
 }
 
+export async function getHistoricalRevenueRows(projectId?: string): Promise<HistoricalRevenueRow[]> {
+  if (await isLocalDbMode()) return readLocalHistoricalRevenueRows(projectId);
+  try {
+    const supabase = await createSupabaseServerClient();
+    
+    let uploadId: string | null = null;
+    if (projectId) {
+      const { data: latestUpload } = await supabase
+        .from('historical_revenue_uploads')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('is_latest', true)
+        .order('upload_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestUpload) {
+        uploadId = latestUpload.id;
+      } else {
+        return []; // No uploads found
+      }
+    }
+
+    const data = await fetchAllSupabaseRows<any>(() => {
+      let query = supabase
+        .from('historical_revenue_rows')
+        .select('*')
+        .order('posting_date', { ascending: true });
+      if (projectId) {
+        query = query.eq('project_id', projectId);
+        if (uploadId) {
+          query = query.eq('upload_id', uploadId);
+        }
+      }
+      return query;
+    });
+    return data.map((row: any) => ({
+      ...row,
+      raw_data_json: row.raw_data_json || {},
+    })) as HistoricalRevenueRow[];
+  } catch {
+    return [];
+  }
+}
+
+export async function getGr55Summaries(projectId?: string): Promise<Gr55CostRow[]> {
+  if (await isLocalDbMode()) return [];
+  try {
+    const supabase = await createSupabaseServerClient();
+    
+    let uploadId: string | null = null;
+    if (projectId) {
+      const { data: latestUpload } = await supabase
+        .from('gr55_uploads')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('is_latest', true)
+        .order('upload_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestUpload) {
+        uploadId = latestUpload.id;
+      } else {
+        return []; // No uploads found
+      }
+    }
+
+    const data = await fetchAllSupabaseRows<any>(() => {
+      let query = supabase
+        .from('gr55_summaries')
+        .select('*')
+        .order('posting_date', { ascending: true });
+      if (projectId) {
+        query = query.eq('project_id', projectId);
+        if (uploadId) {
+          query = query.eq('upload_id', uploadId);
+        }
+      }
+      return query;
+    });
+    return data.map((row: any) => ({
+      ...row,
+      raw_data_json: row.raw_data_json || {},
+    })) as Gr55CostRow[];
+  } catch {
+    return [];
+  }
+}
+
 export async function getProjectManpowerRates(projectId?: string): Promise<ProjectManpowerRate[]> {
   if (await isLocalDbMode()) return readLocalProjectManpowerRates(projectId);
   try {
@@ -438,7 +528,7 @@ export async function getLatestSourceUploads(projectId: string) {
 
   try {
     const supabase = await createSupabaseServerClient();
-    const [cn41, gr55, sales] = await Promise.all([
+    const [cn41, gr55, sales, histRev] = await Promise.all([
       supabase
         .from('cn41_uploads')
         .select('id, project_id, file_name, file_url, upload_date, version_no, is_latest')
@@ -463,18 +553,28 @@ export async function getLatestSourceUploads(projectId: string) {
         .order('upload_date', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from('historical_revenue_uploads')
+        .select('id, project_id, file_name, file_url, upload_date, version_no, is_latest')
+        .eq('project_id', projectId)
+        .eq('is_latest', true)
+        .order('upload_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     return {
       cn41: (cn41.data ?? null) as LatestSourceUpload,
       gr55: (gr55.data ?? null) as LatestSourceUpload,
       sales_order: (sales.data ?? null) as LatestSourceUpload,
+      historical_revenue: (histRev.data ?? null) as LatestSourceUpload,
     };
   } catch {
     return {
       cn41: null,
       gr55: null,
       sales_order: null,
+      historical_revenue: null,
     };
   }
 }

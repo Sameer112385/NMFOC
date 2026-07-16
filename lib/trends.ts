@@ -1,4 +1,4 @@
-import type { Gr55CostRow, DailyUpdate, ProjectWbsMaster, ProjectCostElementControl, RevenueWBS } from '@/lib/types';
+import type { Gr55CostRow, HistoricalRevenueRow, DailyUpdate, ProjectWbsMaster, ProjectCostElementControl, RevenueWBS } from '@/lib/types';
 import { getEffectivePendingCost } from '@/lib/pm-posting';
 
 export interface TrendDataPoint {
@@ -15,10 +15,20 @@ export interface TrendDataPoint {
   plannedRevenue: number; // constant or cumulative planned revenue
   costGrowthPercent: number; // growth compared to previous period
   revenueGrowthPercent: number; // growth compared to previous period
+  /**
+   * Per-WBS decomposition of this period's revenue, keyed by NORMALIZED wbs code.
+   *   past periods   : actual POSTED revenue for that WBS
+   *   current period : POC accrual minus that WBS's cumulative prior postings
+   *
+   * INVARIANT: sum(wbsRevenue.values()) === recognizedRevenue === forecastRevenue
+   * recognized and forecast share one map because their formulas are currently
+   * identical in both branches. If they ever diverge this must split into two maps.
+   */
+  wbsRevenue: Map<string, number>;
 }
 
 // Normalize WBS code helper
-function normalizeCode(code: string) {
+export function normalizeCode(code: string) {
   return code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
@@ -53,6 +63,9 @@ function normalizeCostElement(code: string) {
   return code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
+// SAP GL accounts that carry billed revenue rather than cost
+const REVENUE_GL_CODES = ['400110', '400119', '400210', '400310'];
+
 // Helper to determine if a cost element is included
 function isCostElementIncluded(costElement: string, controlList: ProjectCostElementControl[]) {
   if (!controlList.length) return true;
@@ -83,7 +96,8 @@ function getYearKey(dateStr: string): string {
 export function buildTrendData(params: {
   projectId: string;
   costRows: RevenueWBS[]; // from revenue_wbs (for Planned Cost and Planned Revenue)
-  gr55Rows: Gr55CostRow[]; // raw SAP cost postings
+  gr55Rows: Gr55CostRow[]; // raw/summary SAP postings
+  historicalRevenueRows?: HistoricalRevenueRow[]; // raw pre-2026 revenue rows
   updates: DailyUpdate[]; // PM daily updates
   wbsMaster: ProjectWbsMaster[];
   costElementControl: ProjectCostElementControl[];
@@ -91,7 +105,7 @@ export function buildTrendData(params: {
   periodType: 'month' | 'quarter' | 'year';
   selectedPos?: string[];
 }): TrendDataPoint[] {
-  const { costRows, gr55Rows, updates, wbsMaster, costElementControl, filterWbsCodes, periodType, selectedPos } = params;
+  const { costRows, gr55Rows, historicalRevenueRows = [], updates, wbsMaster, costElementControl, filterWbsCodes, periodType, selectedPos } = params;
 
   // Create lookup maps for WBS rules
   const wbsMasterMap = new Map(wbsMaster.map((w) => [normalizeCode(w.wbs_code), w]));
@@ -162,6 +176,11 @@ export function buildTrendData(params: {
     const isActive = config ? config.is_active !== false : true;
     
     if (isActive === false || includeInCost === false) return false;
+    
+    // Exclude designated revenue GLs from cost calculations
+    const costEl = normalizeCostElement(String(row.cost_element ?? '').trim());
+    if (['400110', '400119', '400210', '400310'].includes(costEl)) return false;
+
     if (!isCostElementIncluded(row.cost_element ?? '', costElementControl)) return false;
     if (selectedPos && selectedPos.length > 0 && !selectedPos.includes(String(row.purchasing_document || "").trim())) return false;
     
@@ -189,6 +208,16 @@ export function buildTrendData(params: {
   const dates: string[] = [];
   filteredGr55.forEach((row) => {
     if (row.posting_date) dates.push(row.posting_date);
+  });
+  historicalRevenueRows.forEach((row) => {
+    if (row.posting_date) dates.push(row.posting_date);
+  });
+  gr55Rows.forEach((row) => {
+    // Include posting dates for revenue GLs too
+    const costEl = normalizeCostElement(String(row.cost_element ?? '').trim());
+    if (['400110', '400119', '400210', '400310'].includes(costEl) && row.posting_date) {
+      dates.push(row.posting_date);
+    }
   });
   filteredUpdates.forEach((up) => {
     if (up.update_date) dates.push(up.update_date);
@@ -260,6 +289,62 @@ export function buildTrendData(params: {
   let prevCumulativeForecastCost = 0;
   let prevCumulativeForecastRevenue = 0;
 
+  // Cumulative posted revenue per normalized WBS across every period BEFORE the current one.
+  // Partitions prevCumulativeRecognizedRevenue exactly, which is what lets the current
+  // period's per-WBS accrual be derived as (POC revenue - that WBS's prior postings).
+  const priorPostedByWbs = new Map<string, number>();
+
+  // Posted revenue indexed as period -> (normalized WBS -> amount). Built in a single pass:
+  // the previous implementation re-filtered every gr55 row once per period, which is
+  // O(periods x rows) and scans the whole dataset ~37 times at monthly granularity.
+  const postedRevenueByPeriodWbs = new Map<string, Map<string, number>>();
+
+  const isRevenueGl = (row: { cost_element?: string | null }) =>
+    REVENUE_GL_CODES.includes(normalizeCostElement(String(row.cost_element ?? '').trim()));
+
+  const addPostedRevenue = (periodKey: string, rawWbsCode: string, amount: number) => {
+    if (!amount) return;
+    const norm = normalizeCode(String(rawWbsCode ?? ''));
+    // Roll up to the owning active WBS so posted rows line up with the POC rows below.
+    // The `?? norm` fallback is load-bearing: it guarantees no posting is ever dropped,
+    // which is what keeps sum(wbsRevenue) === recognizedRevenue for every period.
+    const key = findActiveWbsPrefix(norm, allActiveWbsNorms) ?? norm;
+    let inner = postedRevenueByPeriodWbs.get(periodKey);
+    if (!inner) {
+      inner = new Map<string, number>();
+      postedRevenueByPeriodWbs.set(periodKey, inner);
+    }
+    inner.set(key, (inner.get(key) ?? 0) + amount);
+  };
+
+  (historicalRevenueRows ?? []).forEach((row) => {
+    if (!row.posting_date) return;
+    if (row.posting_date.slice(0, 7) >= '2026-01') return; // Pre-2026 only
+    if (!isMatchingFilter(row.wbs_code) || !isMatchingPo(row.wbs_code)) return;
+    if (!isRevenueGl(row)) return;
+    addPostedRevenue(getPeriodKey(row.posting_date), row.wbs_code, Number(row.amount || 0));
+  });
+
+  gr55Rows.forEach((row) => {
+    if (!row.posting_date) return;
+    if (row.posting_date.slice(0, 7) < '2026-01') return; // Post-2026 only
+    if (!isMatchingFilter(row.wbs_code) || !isMatchingPo(row.wbs_code)) return;
+    if (!isRevenueGl(row)) return;
+    // Negate: raw SAP actuals are stored as credit (negative) values in the database
+    addPostedRevenue(getPeriodKey(row.posting_date), row.wbs_code, -Number(row.amount || 0));
+  });
+
+  // Helper to extract posted revenue for a specific period key
+  const getPostedRevenueForPeriod = (periodKey: string): number => {
+    let sum = 0;
+    postedRevenueByPeriodWbs.get(periodKey)?.forEach((value) => {
+      sum += value;
+    });
+    return sum;
+  };
+
+  const currentPeriod = periodKeys[periodKeys.length - 1]!;
+
   for (let i = 0; i < periodKeys.length; i++) {
     const p = periodKeys[i]!;
 
@@ -297,34 +382,60 @@ export function buildTrendData(params: {
       cumulativeForecastCost += (actual + pending);
     });
 
-    // Compute recognized revenue at period end (summed per active revenue-generating WBS)
     let cumulativeRecognizedRevenue = 0;
     let cumulativeForecastRevenue = 0;
+    let recognizedRevenue = 0;
+    let forecastRevenue = 0;
+    const wbsRevenue = new Map<string, number>();
 
-    activeRevenueWbs.forEach((row) => {
-      const norm = normalizeCode(row.wbs_code);
-      const actual = wbsActualCostMap.get(norm) || 0;
-      const pending = wbsPendingCostMap.get(norm) || 0;
+    if (p < currentPeriod) {
+      // Historical period: Revenue is sum of postings for that period
+      postedRevenueByPeriodWbs.get(p)?.forEach((value, norm) => {
+        wbsRevenue.set(norm, value);
+      });
+      recognizedRevenue = getPostedRevenueForPeriod(p);
+      forecastRevenue = recognizedRevenue;
+      cumulativeRecognizedRevenue = prevCumulativeRecognizedRevenue + recognizedRevenue;
+      cumulativeForecastRevenue = prevCumulativeForecastRevenue + forecastRevenue;
+    } else {
+      // Current Period (Current Month): Revenue is calculated using the POC method
+      const pocRevenueByWbs = new Map<string, number>();
 
-      const plannedCostWbs = row.planned_cost;
-      const plannedRevenueWbs = row.planned_revenue;
+      activeRevenueWbs.forEach((row) => {
+        const norm = normalizeCode(row.wbs_code);
+        const actual = wbsActualCostMap.get(norm) || 0;
+        const pending = wbsPendingCostMap.get(norm) || 0;
 
-      // Actual recognized revenue for WBS (includes GR55 + PM updates)
-      const poc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
-      const recognized = (poc / 100) * plannedRevenueWbs;
-      cumulativeRecognizedRevenue += recognized;
+        const plannedCostWbs = row.planned_cost;
+        const plannedRevenueWbs = row.planned_revenue;
 
-      // Forecast recognized revenue for WBS (incorporates PM pending updates)
-      const forecastPoc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
-      const forecastRecognized = (forecastPoc / 100) * plannedRevenueWbs;
-      cumulativeForecastRevenue += forecastRecognized;
-    });
+        const poc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
+        const recognized = (poc / 100) * plannedRevenueWbs;
+        cumulativeRecognizedRevenue += recognized;
+        // Accumulate rather than set: if two costRows normalize to the same code the
+        // cumulative total above counts both, so the breakdown must too.
+        pocRevenueByWbs.set(norm, (pocRevenueByWbs.get(norm) ?? 0) + recognized);
 
-    // Extract periodic values
+        const forecastPoc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
+        const forecastRecognized = (forecastPoc / 100) * plannedRevenueWbs;
+        cumulativeForecastRevenue += forecastRecognized;
+      });
+
+      // In-period revenue per WBS = its cumulative POC revenue less what it already billed.
+      // Union the key sets so a WBS with prior postings but no POC row still surfaces as a
+      // negative reversal instead of silently unbalancing the column.
+      const norms = new Set<string>([...pocRevenueByWbs.keys(), ...priorPostedByWbs.keys()]);
+      norms.forEach((norm) => {
+        wbsRevenue.set(norm, (pocRevenueByWbs.get(norm) ?? 0) - (priorPostedByWbs.get(norm) ?? 0));
+      });
+
+      recognizedRevenue = cumulativeRecognizedRevenue - prevCumulativeRecognizedRevenue;
+      forecastRevenue = cumulativeForecastRevenue - prevCumulativeForecastRevenue;
+    }
+
+    // Extract periodic values for cost
     const actualCost = cumulativeActualCost - prevCumulativeActualCost;
-    const recognizedRevenue = cumulativeRecognizedRevenue - prevCumulativeRecognizedRevenue;
     const forecastCost = cumulativeForecastCost - prevCumulativeForecastCost;
-    const forecastRevenue = cumulativeForecastRevenue - prevCumulativeForecastRevenue;
 
     // Period growths
     let costGrowthPercent = 0;
@@ -345,6 +456,19 @@ export function buildTrendData(params: {
       }
     }
 
+    if (process.env.NODE_ENV !== 'production') {
+      let breakdownSum = 0;
+      wbsRevenue.forEach((value) => {
+        breakdownSum += value;
+      });
+      if (Math.abs(breakdownSum - recognizedRevenue) > 0.01) {
+        console.warn(
+          `[trends] wbsRevenue decomposition does not partition the period total @ ${p}: ` +
+            `breakdown=${breakdownSum} vs recognized=${recognizedRevenue}`,
+        );
+      }
+    }
+
     trendData.push({
       period: p,
       actualCost,
@@ -359,7 +483,15 @@ export function buildTrendData(params: {
       plannedRevenue,
       costGrowthPercent,
       revenueGrowthPercent,
+      wbsRevenue,
     });
+
+    // Past periods feed the prior-postings baseline that the current period subtracts.
+    if (p < currentPeriod) {
+      wbsRevenue.forEach((value, norm) => {
+        priorPostedByWbs.set(norm, (priorPostedByWbs.get(norm) ?? 0) + value);
+      });
+    }
 
     prevCumulativeActualCost = cumulativeActualCost;
     prevCumulativeRecognizedRevenue = cumulativeRecognizedRevenue;

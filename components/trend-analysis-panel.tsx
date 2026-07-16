@@ -34,7 +34,7 @@ import {
   Info,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { buildTrendData, type TrendDataPoint } from "@/lib/trends";
+import { buildTrendData, normalizeCode, type TrendDataPoint } from "@/lib/trends";
 import { getEffectivePendingCost } from "@/lib/pm-posting";
 import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import { DarkSelect } from "@/components/dark-select";
@@ -46,6 +46,7 @@ import type {
   ProjectCostElementControl,
   ProjectWbsMaster,
   RevenueWBS,
+  HistoricalRevenueRow,
 } from "@/lib/types";
 
 // Design constants matching globals.css
@@ -118,6 +119,7 @@ interface TrendAnalysisPanelProps {
   selectedPos: string[];
   setSelectedPos: (val: string[]) => void;
   poOptions: string[];
+  historicalRevenueRows?: HistoricalRevenueRow[];
 }
 
 export function TrendAnalysisPanel({
@@ -131,6 +133,7 @@ export function TrendAnalysisPanel({
   selectedPos,
   setSelectedPos,
   poOptions,
+  historicalRevenueRows = [],
 }: TrendAnalysisPanelProps) {
   // Filters State (Project & Customer are removed as they are contextually fixed)
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
@@ -149,6 +152,10 @@ export function TrendAnalysisPanel({
   const [drilldownSearch, setDrilldownSearch] = useState<string>("");
   const [drilldownPage, setDrilldownPage] = useState<number>(1);
   const itemsPerPage = 8;
+
+  // Revenue by WBS & Period matrix
+  const [matrixSort, setMatrixSort] = useState<"code" | "total">("code");
+  const [hideZeroMatrixRows, setHideZeroMatrixRows] = useState<boolean>(true);
 
   // WBS Lookup Maps
   const wbsIdToCodeMap = useMemo(() => new Map(costRows.map((r) => [r.id || "", r.wbs_code])), [costRows]);
@@ -195,13 +202,14 @@ export function TrendAnalysisPanel({
       projectId: currentProjectId,
       costRows,
       gr55Rows,
+      historicalRevenueRows,
       updates,
       wbsMaster,
       costElementControl,
       filterWbsCodes: selectedWbs.length > 0 ? selectedWbs : undefined,
       periodType,
     });
-  }, [currentProjectId, costRows, gr55Rows, updates, wbsMaster, costElementControl, selectedWbs, periodType]);
+  }, [currentProjectId, costRows, gr55Rows, historicalRevenueRows, updates, wbsMaster, costElementControl, selectedWbs, periodType]);
 
   // Distinct periods generated in the base trend data
   const distinctPeriods = useMemo(() => {
@@ -219,6 +227,57 @@ export function TrendAnalysisPanel({
     }
     return result;
   }, [baseTrendData, startPeriod, endPeriod]);
+
+  // The one period the engine values with POC instead of posted actuals. Taken from the
+  // UNFILTERED series: narrowing the start/end range hides this column but does not move it.
+  const enginePocPeriod = useMemo(
+    () => (baseTrendData.length ? baseTrendData[baseTrendData.length - 1]!.period : null),
+    [baseTrendData],
+  );
+
+  // Revenue decomposed by WBS (rows) x period (columns). Reads the breakdown the engine
+  // already computed, so every column total equals that period's revenue by construction.
+  const wbsRevenueMatrix = useMemo(() => {
+    const periods = trendData.map((pt) => pt.period);
+
+    const normToCode = new Map<string, string>();
+    costRows.forEach((row) => {
+      const norm = normalizeCode(row.wbs_code);
+      if (!normToCode.has(norm)) normToCode.set(norm, row.wbs_code);
+    });
+
+    const rowKeys = new Set<string>();
+    trendData.forEach((pt) => pt.wbsRevenue.forEach((_value, norm) => rowKeys.add(norm)));
+
+    let rows = Array.from(rowKeys).map((norm) => {
+      const code = normToCode.get(norm) ?? norm;
+      const cells = trendData.map((pt) => pt.wbsRevenue.get(norm) ?? 0);
+      return {
+        norm,
+        code,
+        desc: wbsCodeToDescMap.get(code) ?? "",
+        cells,
+        total: cells.reduce((sum, value) => sum + value, 0),
+        // Posted revenue on a WBS absent from revenue_wbs. Impossible in current data, but
+        // it must stay visible: the engine counts it, so hiding it would lose money.
+        isUnmapped: !normToCode.has(norm),
+      };
+    });
+
+    // Only drops rows that are zero in EVERY visible column, so column totals never move.
+    if (hideZeroMatrixRows) rows = rows.filter((row) => row.cells.some((value) => value !== 0));
+
+    rows.sort((a, b) => (matrixSort === "total" ? b.total - a.total : a.code.localeCompare(b.code)));
+
+    const columnTotals = periods.map((_p, index) => rows.reduce((sum, row) => sum + row.cells[index]!, 0));
+
+    return {
+      periods,
+      rows,
+      columnTotals,
+      grandTotal: columnTotals.reduce((sum, value) => sum + value, 0),
+    };
+  }, [trendData, costRows, wbsCodeToDescMap, matrixSort, hideZeroMatrixRows]);
 
   // Cost Element Category time series breakdown and Pareto Analysis
   const categoryTrendData = useMemo(() => {
@@ -780,6 +839,34 @@ export function TrendAnalysisPanel({
 
     const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
     XLSX.utils.book_append_sheet(wb, wsSummary, "Trend Summary");
+
+    if (wbsRevenueMatrix.rows.length > 0) {
+      // aoa_to_sheet, not json_to_sheet: the period columns are dynamic, and building objects
+      // with computed keys would make column order depend on key insertion order.
+      const header = [
+        "WBS Code",
+        "WBS Description",
+        ...wbsRevenueMatrix.periods.map((period) =>
+          period === enginePocPeriod ? `${period} (POC accrual)` : period,
+        ),
+        "Total",
+      ];
+      const body = wbsRevenueMatrix.rows.map((row) => [
+        row.code,
+        row.desc,
+        ...row.cells,
+        row.total,
+      ]);
+      const totalRow = [
+        "TOTAL",
+        `${wbsRevenueMatrix.rows.length} WBS items`,
+        ...wbsRevenueMatrix.columnTotals,
+        wbsRevenueMatrix.grandTotal,
+      ];
+
+      const wsMatrix = XLSX.utils.aoa_to_sheet([header, ...body, totalRow]);
+      XLSX.utils.book_append_sheet(wb, wsMatrix, "Revenue by WBS & Period");
+    }
 
     if (selectedPeriod) {
       const sapRows = rawDrilldownData.sap.map((row) => ({
@@ -1739,7 +1826,191 @@ export function TrendAnalysisPanel({
 
 
 
-      {/* 4. Interactive Drill-Down Table */}
+      {/* 4. Revenue by WBS & Period matrix */}
+      {/* relative z-0 pins this card's own stacking context BELOW the page filter bar
+          (sticky top-[138px] z-10 above), so the sticky cells inside can never paint over it. */}
+      <div className="relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-line/30 pb-4">
+          <div>
+            <h3 className="text-base font-bold text-text">Revenue by WBS &amp; Period</h3>
+            <p className="mt-1 text-xs text-muted/70">
+              {wbsRevenueMatrix.rows.length} WBS element{wbsRevenueMatrix.rows.length === 1 ? "" : "s"} across{" "}
+              {wbsRevenueMatrix.periods.length} period{wbsRevenueMatrix.periods.length === 1 ? "" : "s"}. Column totals
+              match the trend charts above.
+            </p>
+          </div>
+
+          <div className="no-print flex items-center gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-muted">
+              <input
+                type="checkbox"
+                checked={hideZeroMatrixRows}
+                onChange={(event) => setHideZeroMatrixRows(event.target.checked)}
+                className="h-3.5 w-3.5 rounded border-line accent-accent"
+              />
+              Hide empty rows
+            </label>
+            <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
+              {(["code", "total"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setMatrixSort(mode)}
+                  className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${
+                    matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"
+                  }`}
+                >
+                  {mode === "code" ? "WBS Code" : "Total"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* The measure changes in exactly one column. Say which, and say it every time. */}
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-line/40 bg-panel2/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+          {enginePocPeriod && wbsRevenueMatrix.periods.includes(enginePocPeriod) ? (
+            <span>
+              Every column shows <strong className="text-text">actual revenue posted</strong> in that period, except{" "}
+              <strong className="text-accent">{enginePocPeriod}°</strong>, which is a{" "}
+              <strong className="text-text">percentage-of-completion accrual</strong> (planned revenue × cost-based POC,
+              less what that WBS already billed). The two are different measures — a row does not read left-to-right as
+              one series. The <strong className="text-accent">{enginePocPeriod}°</strong> column total is what ties to
+              the In Month Rev card above; the grand total does not.
+            </span>
+          ) : (
+            <span>
+              Every column shows <strong className="text-text">actual revenue posted</strong> in that period. The
+              percentage-of-completion accrual period{enginePocPeriod ? ` (${enginePocPeriod})` : ""} falls outside the
+              selected range.
+            </span>
+          )}
+        </div>
+
+        {wbsRevenueMatrix.rows.length > 0 && wbsRevenueMatrix.periods.length > 0 ? (
+          <div className="mt-4 overflow-x-auto overflow-y-auto max-h-[580px]">
+            {/* Width must be inline: Tailwind cannot compile a runtime-interpolated min-w-[Npx].
+                border-separate, not border-collapse: collapsed borders detach from sticky cells
+                and scroll away, so every rule lives on a cell instead. */}
+            <table
+              style={{ minWidth: 280 + wbsRevenueMatrix.periods.length * 120 + 150 }}
+              className="w-full text-xs border-separate border-spacing-0"
+            >
+              {/* Sticky + z-index live on the CELLS, not on thead/tfoot: a positioned thead
+                  creates a stacking context that traps its own corner cell underneath the
+                  body's sticky column. Layering: body-left 10 < header/footer 20 < corners 30.
+                  Backgrounds must be fully opaque or scrolling columns ghost through. */}
+              <thead className="text-left text-muted/80">
+                <tr>
+                  <th className="sticky top-0 left-0 z-30 w-[280px] min-w-[280px] border-b border-line/45 bg-panel2 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] shadow-[1px_0_0_0_rgb(var(--color-line))]">
+                    WBS
+                  </th>
+                  {wbsRevenueMatrix.periods.map((period) => {
+                    const isPoc = period === enginePocPeriod;
+                    return (
+                      <th
+                        key={period}
+                        title={
+                          isPoc
+                            ? "Percentage-of-completion accrual — planned revenue × cost-based POC. All other columns are posted actuals."
+                            : "Actual revenue posted in this period."
+                        }
+                        className={`sticky top-0 z-20 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] whitespace-nowrap ${
+                          isPoc ? "border-b-2 border-accent text-accent" : "border-b border-line/45"
+                        }`}
+                      >
+                        {period}
+                        {isPoc ? "°" : ""}
+                      </th>
+                    );
+                  })}
+                  <th className="sticky top-0 z-20 border-b border-line/45 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em]">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+
+              {/* Row rules live on the cells: a border on <tr> only paints under border-collapse. */}
+              <tbody className="text-text font-medium">
+                {wbsRevenueMatrix.rows.map((row) => (
+                  <tr key={row.norm} className="group">
+                    <td className="sticky left-0 z-10 w-[280px] min-w-[280px] border-b border-line/30 bg-panel px-4 py-3 shadow-[1px_0_0_0_rgb(var(--color-line))] transition group-hover:bg-panel2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-accent whitespace-nowrap">{row.code}</span>
+                        {row.isUnmapped && (
+                          <span
+                            title="Posted revenue on a WBS that is not present in the WBS master"
+                            className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-danger"
+                          >
+                            Unmapped
+                          </span>
+                        )}
+                      </div>
+                      {row.desc && (
+                        <div className="mt-0.5 max-w-[280px] truncate text-[11px] text-muted/70" title={row.desc}>
+                          {row.desc}
+                        </div>
+                      )}
+                    </td>
+
+                    {row.cells.map((value, index) => (
+                      <td
+                        key={wbsRevenueMatrix.periods[index]}
+                        className={`border-b border-line/30 px-4 py-3 text-right font-mono whitespace-nowrap transition group-hover:bg-panel2/40 ${
+                          wbsRevenueMatrix.periods[index] === enginePocPeriod ? "bg-accent/5" : ""
+                        } ${value === 0 ? "text-muted/40" : value < 0 ? "text-danger" : "text-success"}`}
+                      >
+                        {value === 0 ? "—" : formatCurrency(value)}
+                      </td>
+                    ))}
+
+                    <td
+                      className={`border-b border-line/30 px-4 py-3 text-right font-mono font-bold whitespace-nowrap transition group-hover:bg-panel2/40 ${
+                        row.total < 0 ? "text-danger" : "text-text"
+                      }`}
+                    >
+                      {formatCurrency(row.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+
+              <tfoot className="font-bold text-text">
+                <tr>
+                  <td className="sticky bottom-0 left-0 z-30 w-[280px] min-w-[280px] bg-panel2 border-t-2 border-line/65 px-4 py-3 text-[11px] uppercase tracking-wider shadow-[1px_0_0_0_rgb(var(--color-line))]">
+                    Total · {wbsRevenueMatrix.rows.length} WBS
+                  </td>
+                  {wbsRevenueMatrix.columnTotals.map((total, index) => (
+                    <td
+                      key={wbsRevenueMatrix.periods[index]}
+                      className={`sticky bottom-0 z-20 bg-panel2 border-t-2 px-4 py-3 text-right font-mono whitespace-nowrap ${
+                        wbsRevenueMatrix.periods[index] === enginePocPeriod
+                          ? "text-accent border-accent"
+                          : "border-line/65"
+                      } ${total < 0 ? "text-danger" : ""}`}
+                    >
+                      {formatCurrency(total)}
+                    </td>
+                  ))}
+                  <td className="sticky bottom-0 z-20 bg-panel2 border-t-2 border-line/65 px-4 py-3 text-right font-mono whitespace-nowrap">
+                    {formatCurrency(wbsRevenueMatrix.grandTotal)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <div className="py-16 text-center text-sm text-muted">
+            <div className="font-semibold text-text">No revenue to break down</div>
+            <div className="mt-1 text-xs">
+              No revenue-generating WBS produced revenue in the selected range.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Interactive Drill-Down Table */}
       <div className="rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line/30 pb-4">
           <div>
@@ -1955,7 +2226,7 @@ export function TrendAnalysisPanel({
                         <td className="py-2.5 px-3 font-mono text-accent">{item.wbsCode}</td>
                         <td className="py-2.5 px-3">{item.wbsDesc}</td>
                         <td className="py-2.5 px-3 text-right font-mono">{formatCurrency(item.actual)}</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-success">
+                        <td className={`py-2.5 px-3 text-right font-mono ${item.revenue < 0 ? 'text-red-500 font-semibold' : 'text-success'}`}>
                           {formatCurrency(item.revenue)}
                         </td>
                       </tr>

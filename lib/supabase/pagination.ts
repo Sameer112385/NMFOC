@@ -8,7 +8,8 @@ export async function fetchAllSupabaseRows<T>(
 
   for (let from = 0; ; from += pageSize) {
     const to = from + pageSize - 1;
-    const { data, error } = await createQuery().range(from, to);
+    // Order by ID to ensure stable and deterministic pagination output
+    const { data, error } = await createQuery().order('id', { ascending: true }).range(from, to);
     if (error) throw error;
 
     const page = (data ?? []) as T[];

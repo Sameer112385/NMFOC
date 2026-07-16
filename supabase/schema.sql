@@ -111,6 +111,33 @@ create table if not exists sales_order_rows (
   raw_data_json jsonb not null default '{}'::jsonb
 );
 
+create table if not exists historical_revenue_uploads (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  file_name text not null,
+  file_url text not null,
+  upload_date timestamptz not null default now(),
+  uploaded_by uuid,
+  version_no integer not null default 1,
+  is_latest boolean not null default true
+);
+
+create table if not exists historical_revenue_rows (
+  id uuid primary key default gen_random_uuid(),
+  upload_id uuid not null references historical_revenue_uploads(id) on delete cascade,
+  project_id uuid not null references projects(id) on delete cascade,
+  posting_date date not null,
+  fiscal_year integer,
+  fiscal_period integer,
+  wbs_code text not null,
+  wbs_description text,
+  cost_element text not null,
+  amount numeric not null default 0,
+  currency text,
+  raw_data_json jsonb not null default '{}'::jsonb
+);
+
+
 create table if not exists revenue_wbs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
@@ -299,8 +326,10 @@ create table if not exists comments (
 create index if not exists idx_cn41_uploads_project_latest on cn41_uploads(project_id, is_latest desc, upload_date desc);
 create index if not exists idx_gr55_uploads_project_latest on gr55_uploads(project_id, is_latest desc, upload_date desc);
 create index if not exists idx_sales_order_uploads_project_latest on sales_order_uploads(project_id, is_latest desc, upload_date desc);
+create index if not exists idx_historical_revenue_uploads_project_latest on historical_revenue_uploads(project_id, is_latest desc, upload_date desc);
 create index if not exists idx_revenue_wbs_project on revenue_wbs(project_id);
 create index if not exists idx_gr55_rows_project on gr55_rows(project_id, posting_date desc, wbs_code);
+create index if not exists idx_historical_revenue_rows_project on historical_revenue_rows(project_id, posting_date desc, wbs_code);
 create index if not exists idx_sales_order_rows_project on sales_order_rows(project_id, effective_date desc, wbs_code);
 create index if not exists idx_project_wbs_master_project on project_wbs_master(project_id, wbs_code);
 create index if not exists idx_project_subcontracts_project on project_subcontracts(project_id, package_name);
@@ -318,6 +347,8 @@ alter table gr55_uploads enable row level security;
 alter table gr55_rows enable row level security;
 alter table sales_order_uploads enable row level security;
 alter table sales_order_rows enable row level security;
+alter table historical_revenue_uploads enable row level security;
+alter table historical_revenue_rows enable row level security;
 alter table revenue_wbs enable row level security;
 alter table project_wbs_master enable row level security;
 alter table project_subcontracts enable row level security;
@@ -378,6 +409,20 @@ create policy "Authenticated users can read sales order rows" on sales_order_row
 
 drop policy if exists "Authenticated users can write sales order rows" on sales_order_rows;
 create policy "Authenticated users can write sales order rows" on sales_order_rows for insert with check (auth.role() = 'authenticated');
+
+-- historical_revenue_uploads
+drop policy if exists "Authenticated users can read historical uploads" on historical_revenue_uploads;
+create policy "Authenticated users can read historical uploads" on historical_revenue_uploads for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated users can write historical uploads" on historical_revenue_uploads;
+create policy "Authenticated users can write historical uploads" on historical_revenue_uploads for insert with check (auth.role() = 'authenticated');
+
+-- historical_revenue_rows
+drop policy if exists "Authenticated users can read historical rows" on historical_revenue_rows;
+create policy "Authenticated users can read historical rows" on historical_revenue_rows for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Authenticated users can write historical rows" on historical_revenue_rows;
+create policy "Authenticated users can write historical rows" on historical_revenue_rows for insert with check (auth.role() = 'authenticated');
 
 -- revenue_wbs
 drop policy if exists "Authenticated users can read revenue" on revenue_wbs;
