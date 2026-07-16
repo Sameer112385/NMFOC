@@ -11,14 +11,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const hasDemoSession = cookieStore.has('sap-cn41-demo-session');
 
   if (isConfigured && !hasDemoSession) {
+    // Default to "has session" so a Supabase outage keeps the app usable (local scaffolding),
+    // rather than locking everyone out.
+    let hasSession = true;
     try {
       const supabase = await createSupabaseServerClient();
       const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        redirect('/login');
-      }
+      hasSession = Boolean(data.session);
     } catch {
-      // Keep the app usable in local scaffolding mode.
+      hasSession = true;
+    }
+    // redirect() throws NEXT_REDIRECT; it MUST live outside the try/catch above, or the
+    // bare catch swallows it and the request falls through and 500s for signed-out users.
+    if (!hasSession) {
+      redirect('/login');
     }
   }
 
