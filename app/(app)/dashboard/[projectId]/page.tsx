@@ -13,7 +13,8 @@ import {
   getGr55Summaries,
   getHistoricalRevenueRows,
 } from '@/lib/data';
-import { getDashboardLayout } from '@/lib/dashboard-layout';
+import { getEffectiveDashboardLayout } from '@/lib/dashboard-layout';
+import { getCurrentAppUser, canManageDashboardLayout } from '@/lib/current-user';
 import { DashboardClientWorkspace } from '@/components/dashboard-client-workspace';
 
 export default async function ProjectDashboardPage({ params }: { params: Promise<{ projectId: string }> }) {
@@ -46,7 +47,9 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
     getHistoricalRevenueRows(projectId),
   ]);
 
-  const dashboardLayout = await getDashboardLayout();
+  const dashboardLayout = await getEffectiveDashboardLayout(projectId);
+  const currentUser = await getCurrentAppUser();
+  const canCustomize = canManageDashboardLayout(currentUser?.role);
 
   // Only include active and cost-included WBS elements from WBS Master
   const costWbsCodes = new Set(
@@ -81,6 +84,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
         gr55Rows={gr55Rows}
         historicalRevenueRows={historicalRevenueRows}
         dashboardLayout={dashboardLayout}
+        canCustomize={canCustomize}
       />
     </PageShell>
   );

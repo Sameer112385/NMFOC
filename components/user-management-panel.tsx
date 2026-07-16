@@ -174,20 +174,11 @@ export function UserManagementPanel() {
   const isServiceRoleKeyMissing = isSupabaseConfigured && !status?.hasServiceRoleKey;
 
   return (
-    <div className={cn("p-6 xl:col-span-2", surfaceCard)}>
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line/30 pb-5">
-        <div>
-          <div className="section-kicker text-accent font-bold tracking-[0.12em]">Administration Workspace</div>
-          <h3 className="mt-1 text-lg font-bold text-text">User Management</h3>
-          <p className="mt-1 text-xs text-muted/90 font-medium">
-            Create users, assign role-based permissions (Admin, Cost Controller, Project Manager, Viewer), and manage credentials.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Badge tone={isSupabaseConfigured ? 'accent' : 'default'}>
-            {isSupabaseConfigured ? 'Supabase Auth' : 'Local DB Demo'}
-          </Badge>
-        </div>
+    <div>
+      <div className="mb-4 flex items-center justify-end">
+        <Badge tone={isSupabaseConfigured ? 'accent' : 'default'}>
+          {isSupabaseConfigured ? 'Supabase Auth' : 'Local DB Demo'}
+        </Badge>
       </div>
 
       {isServiceRoleKeyMissing && (

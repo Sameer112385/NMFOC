@@ -86,17 +86,12 @@ export function AdminResetPanel({ canReset }: { canReset: boolean }) {
   }
 
   return (
-    <div className={cn("p-6 xl:col-span-2", surfaceCard)}>
-      <div className="flex items-center justify-between gap-4 border-b border-line/30 pb-5">
-        <div>
-          <div className="section-kicker text-danger font-bold tracking-[0.12em]">System Operations</div>
-          <h3 className="mt-1 text-lg font-bold text-text">Danger Zone</h3>
-          <p className="mt-1 text-xs text-muted/90 font-medium">Use these actions only when you need to back up data, wipe project data, or start over completely.</p>
-        </div>
+    <div>
+      <div className="mb-4 flex items-center justify-end">
         <Badge tone={canReset ? 'warning' : 'default'}>{canReset ? 'Admin Only' : 'No Access'}</Badge>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <button
           type="button"
           onClick={downloadBackup}

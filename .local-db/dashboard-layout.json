@@ -1,0 +1,9 @@
+{
+  "global": {},
+  "projects": {
+    "fa8d7d22-2e29-4abc-8739-881ba4370924": {
+      "summary.panel.projectToDate": "hidden",
+      "summary.panel.periodRollups": "hidden"
+    }
+  }
+}

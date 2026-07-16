@@ -106,21 +106,14 @@ export function SupabaseConnectionPanel() {
   }
 
   return (
-    <div className={cn("p-6", surfaceCard)}>
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line/30 pb-5">
-        <div>
-          <div className="section-kicker text-accent font-bold tracking-[0.12em]">Cloud Storage</div>
-          <h3 className="mt-1 text-lg font-bold text-text">Supabase Connection</h3>
-          <p className="mt-1 text-xs text-muted/90 font-medium">
-            Save your Supabase URL and keys here to connect the app without relying only on env files.
-          </p>
-        </div>
+    <div>
+      <div className="mb-2 flex items-center justify-end">
         <Badge tone={status?.configured ? 'success' : 'warning'}>
           {status?.configured ? 'Connected' : 'Disconnected'}
         </Badge>
       </div>
 
-      <form onSubmit={handleSave} className="mt-6 space-y-4">
+      <form onSubmit={handleSave} className="space-y-4">
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold text-muted">Supabase URL</span>
           <input

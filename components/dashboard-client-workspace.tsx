@@ -18,7 +18,9 @@ import {
 import { getEffectivePendingCost } from "@/lib/pm-posting";
 import { Briefcase, Coins, Percent, TrendingUp, Activity, ShieldAlert, DollarSign, Filter } from "lucide-react";
 import { TrendAnalysisPanel } from "@/components/trend-analysis-panel";
+import { DashboardCustomizePanel } from "@/components/dashboard-customize-panel";
 import { isWidgetHidden, type DashboardLayout } from "@/lib/dashboard-widgets";
+import { SlidersHorizontal } from "lucide-react";
 import { buildTrendData } from "@/lib/trends";
 import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import type {
@@ -108,6 +110,7 @@ interface DashboardClientWorkspaceProps {
   gr55Rows: Gr55CostRow[];
   historicalRevenueRows?: HistoricalRevenueRow[];
   dashboardLayout?: DashboardLayout;
+  canCustomize?: boolean;
 }
 
 export function DashboardClientWorkspace({
@@ -124,11 +127,13 @@ export function DashboardClientWorkspace({
   gr55Rows,
   historicalRevenueRows = [],
   dashboardLayout,
+  canCustomize = false,
 }: DashboardClientWorkspaceProps) {
   // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual;
   // an unknown or typo'd id stays visible, so gating can never accidentally hide something.
   const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
   const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
+  const [customizing, setCustomizing] = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [selectedPos, setSelectedPos] = useState<string[]>([]);
 
@@ -253,27 +258,50 @@ export function DashboardClientWorkspace({
     <div className="space-y-6">
       {/* Sticky Tab Selector (Hidden on Print) */}
       <div className="no-print sticky top-[74px] z-10 rounded-xl border border-line/60 bg-panel/85 p-1.5 shadow-sm backdrop-blur-md">
-        <div className="flex gap-1">
-          <button
-            onClick={() => setActiveTab("summary")}
-            className={cn(
-              "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
-              activeTab === "summary" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
-            )}
-          >
-            Financial Summary
-          </button>
-          <button
-            onClick={() => setActiveTab("trends")}
-            className={cn(
-              "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
-              activeTab === "trends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
-            )}
-          >
-            Trend Analysis
-          </button>
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex gap-1">
+            <button
+              onClick={() => setActiveTab("summary")}
+              className={cn(
+                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                activeTab === "summary" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+              )}
+            >
+              Financial Summary
+            </button>
+            <button
+              onClick={() => setActiveTab("trends")}
+              className={cn(
+                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                activeTab === "trends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+              )}
+            >
+              Trend Analysis
+            </button>
+          </div>
+          {canCustomize ? (
+            <button
+              onClick={() => setCustomizing((c) => !c)}
+              title="Show or hide visuals for this project"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all duration-100",
+                customizing ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Customize
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {canCustomize && customizing ? (
+        <DashboardCustomizePanel
+          projectId={project.id}
+          projectName={project.project_name}
+          onClose={() => setCustomizing(false)}
+        />
+      ) : null}
 
       {activeTab === "summary" ? (
         <div className="space-y-6">

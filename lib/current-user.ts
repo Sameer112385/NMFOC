@@ -73,3 +73,8 @@ export function canEditProjectMaster(role?: string | null): boolean {
 export function canAccessSettings(role?: string | null): boolean {
   return role === 'Admin' || role === 'Cost Controller';
 }
+
+// Editing the dashboard layout (global default and per-project overrides) is Admin-only.
+export function canManageDashboardLayout(role?: string | null): boolean {
+  return role === 'Admin';
+}

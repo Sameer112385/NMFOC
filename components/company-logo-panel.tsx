@@ -105,15 +105,10 @@ export function CompanyLogoPanel() {
   };
 
   return (
-    <div className="glass rounded-2xl p-5 flex flex-col justify-between">
+    <div className="flex flex-col justify-between">
       <div>
-        <h3 className="text-lg font-semibold text-text">Company Branding</h3>
-        <p className="text-xs text-muted mt-1 leading-normal">
-          Customize your logo/banner configurations, name, and branding subtext displayed globally.
-        </p>
-
         {/* Text Settings */}
-        <div className="mt-5 space-y-4">
+        <div className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-text uppercase tracking-wider mb-2">Company Name</label>
             <input
