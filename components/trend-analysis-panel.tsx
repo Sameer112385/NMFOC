@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   LineChart,
@@ -32,6 +33,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
+  X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { buildTrendData, normalizeCode, type TrendDataPoint } from "@/lib/trends";
@@ -122,6 +124,296 @@ interface TrendAnalysisPanelProps {
   historicalRevenueRows?: HistoricalRevenueRow[];
 }
 
+// ---- Per-column (period) value filter, Excel-autofilter style ----
+type ColumnValueFilter = { pos: boolean; neg: boolean; zero: boolean; min: string; max: string };
+const DEFAULT_COLUMN_FILTER: ColumnValueFilter = { pos: true, neg: true, zero: true, min: "", max: "" };
+
+function isColumnFilterActive(f?: ColumnValueFilter): boolean {
+  if (!f) return false;
+  return !(f.pos && f.neg && f.zero && f.min === "" && f.max === "");
+}
+
+// Does a single cell value pass a column's filter?
+function cellPassesColumnFilter(value: number, f: ColumnValueFilter): boolean {
+  const signOk = (value > 0 && f.pos) || (value < 0 && f.neg) || (value === 0 && f.zero);
+  if (!signOk) return false;
+  if (f.min !== "" && Number.isFinite(Number(f.min)) && value < Number(f.min)) return false;
+  if (f.max !== "" && Number.isFinite(Number(f.max)) && value > Number(f.max)) return false;
+  return true;
+}
+
+// Funnel button on a column header. Popover is portaled to <body> so the table's
+// overflow/scroll container cannot clip it.
+function ColumnFilterButton({
+  period,
+  value,
+  onChange,
+}: {
+  period: string;
+  value: ColumnValueFilter;
+  onChange: (next: ColumnValueFilter) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const active = isColumnFilterActive(value);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (rect) setCoords({ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 236) });
+    };
+    place();
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={`Filter rows by their ${period} value`}
+        className={`ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded transition ${
+          active ? "text-accent" : "text-muted/40 hover:text-muted"
+        }`}
+        aria-label={`Filter ${period} column`}
+      >
+        <Filter className="h-3 w-3" fill={active ? "currentColor" : "none"} />
+      </button>
+
+      {open && coords && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={popRef}
+              style={{ top: coords.top, left: coords.left }}
+              className="fixed z-[100] w-56 rounded-xl border border-line bg-panel p-3 text-xs shadow-lg"
+            >
+              <div className="mb-2 font-bold text-text">Filter {period}</div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Show values</div>
+              {(["pos", "neg", "zero"] as const).map((k) => (
+                <label key={k} className="flex cursor-pointer items-center gap-2 py-1 text-text">
+                  <input
+                    type="checkbox"
+                    checked={value[k]}
+                    onChange={(e) => onChange({ ...value, [k]: e.target.checked })}
+                    className="h-3.5 w-3.5 rounded border-line accent-accent"
+                  />
+                  {k === "pos" ? "Positive" : k === "neg" ? "Negative" : "Zero / blank"}
+                </label>
+              ))}
+              <div className="mt-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                Amount range
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  inputMode="decimal"
+                  placeholder="Min"
+                  value={value.min}
+                  onChange={(e) => onChange({ ...value, min: e.target.value })}
+                  className="w-full rounded-lg border border-line bg-panel2 px-2 py-1.5 text-text outline-none focus:border-accent"
+                />
+                <input
+                  inputMode="decimal"
+                  placeholder="Max"
+                  value={value.max}
+                  onChange={(e) => onChange({ ...value, max: e.target.value })}
+                  className="w-full rounded-lg border border-line bg-panel2 px-2 py-1.5 text-text outline-none focus:border-accent"
+                />
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => onChange(DEFAULT_COLUMN_FILTER)}
+                  className="text-[11px] font-bold text-muted transition hover:text-text"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg bg-accent px-3 py-1 text-[11px] font-bold text-white"
+                >
+                  Done
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+// Searchable WBS row filter, presented as a funnel on the WBS column header.
+// Popover is portaled to <body> so the table's scroll container cannot clip it.
+function WbsColumnFilter({
+  options,
+  selected,
+  onChange,
+}: {
+  options: { norm: string; code: string; desc: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const active = selected.length > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (rect) setCoords({ top: rect.bottom + 6, left: Math.max(8, rect.left) });
+    };
+    place();
+    window.setTimeout(() => searchRef.current?.focus(), 0);
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return options;
+    return options.filter(
+      (o) => o.code.toLowerCase().includes(term) || o.desc.toLowerCase().includes(term),
+    );
+  }, [options, query]);
+
+  const toggle = (norm: string) =>
+    onChange(selected.includes(norm) ? selected.filter((x) => x !== norm) : [...selected, norm]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Filter / search WBS rows"
+        className={`ml-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded transition ${
+          active ? "text-accent" : "text-muted/40 hover:text-muted"
+        }`}
+        aria-label="Filter WBS rows"
+      >
+        <Filter className="h-3 w-3" fill={active ? "currentColor" : "none"} />
+      </button>
+
+      {open && coords && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={popRef}
+              style={{ top: coords.top, left: coords.left }}
+              className="fixed z-[100] flex max-h-80 w-72 flex-col overflow-hidden rounded-xl border border-line bg-panel text-xs shadow-lg"
+            >
+              <div className="shrink-0 border-b border-line/70 p-2">
+                <div className="flex items-center gap-2 rounded-lg border border-line bg-panel2/60 px-3 py-2">
+                  <Search className="h-3.5 w-3.5 shrink-0 text-muted/70" />
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search WBS code or link name..."
+                    className="w-full bg-transparent text-xs text-text outline-none placeholder:text-muted/60"
+                  />
+                </div>
+                <div className="mt-2 flex justify-between px-1">
+                  <button
+                    type="button"
+                    onClick={() => onChange(filtered.map((o) => o.norm))}
+                    className="text-[10px] font-bold uppercase text-accent hover:underline"
+                  >
+                    Select shown
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChange([])}
+                    className="text-[10px] font-bold uppercase text-muted hover:text-text hover:underline"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              </div>
+              <ul className="min-h-0 flex-1 divide-y divide-line/35 overflow-y-auto py-1">
+                {filtered.map((o) => {
+                  const isSel = selected.includes(o.norm);
+                  return (
+                    <li
+                      key={o.norm}
+                      onClick={() => toggle(o.norm)}
+                      className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-text transition hover:bg-panel2/50 ${
+                        isSel ? "bg-accent/5" : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSel}
+                        onChange={() => {}}
+                        className="h-3.5 w-3.5 shrink-0 rounded border-line accent-accent"
+                      />
+                      <span className="truncate" title={`${o.code}${o.desc ? ` — ${o.desc}` : ""}`}>
+                        <span className="font-mono text-accent/85">{o.code}</span>
+                        {o.desc ? <span className="ml-1.5 text-muted">{o.desc}</span> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+                {filtered.length === 0 ? (
+                  <li className="px-3 py-6 text-center text-muted/65">No WBS found</li>
+                ) : null}
+              </ul>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
 export function TrendAnalysisPanel({
   currentProjectId,
   projects,
@@ -156,6 +448,10 @@ export function TrendAnalysisPanel({
   // Revenue by WBS & Period matrix
   const [matrixSort, setMatrixSort] = useState<"code" | "total">("code");
   const [hideZeroMatrixRows, setHideZeroMatrixRows] = useState<boolean>(true);
+  // Searchable WBS row filter (normalized codes); empty = all rows.
+  const [selectedMatrixWbs, setSelectedMatrixWbs] = useState<string[]>([]);
+  // Excel-style per-column value filters, keyed by period.
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnValueFilter>>({});
 
   // WBS Lookup Maps
   const wbsIdToCodeMap = useMemo(() => new Map(costRows.map((r) => [r.id || "", r.wbs_code])), [costRows]);
@@ -235,10 +531,29 @@ export function TrendAnalysisPanel({
     [baseTrendData],
   );
 
+  // All WBS present in the matrix — the searchable WBS filter's option list. Independent of the
+  // current selection so the list stays stable while filtering.
+  const matrixWbsOptions = useMemo(() => {
+    const normToCode = new Map<string, string>();
+    costRows.forEach((row) => {
+      const norm = normalizeCode(row.wbs_code);
+      if (!normToCode.has(norm)) normToCode.set(norm, row.wbs_code);
+    });
+    const keys = new Set<string>();
+    trendData.forEach((pt) => pt.wbsRevenue.forEach((_value, norm) => keys.add(norm)));
+    return Array.from(keys)
+      .map((norm) => {
+        const code = normToCode.get(norm) ?? norm;
+        return { norm, code, desc: wbsCodeToDescMap.get(code) ?? "" };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [trendData, costRows, wbsCodeToDescMap]);
+
   // Revenue decomposed by WBS (rows) x period (columns). Reads the breakdown the engine
   // already computed, so every column total equals that period's revenue by construction.
   const wbsRevenueMatrix = useMemo(() => {
-    const periods = trendData.map((pt) => pt.period);
+    const visiblePoints = trendData;
+    const periods = visiblePoints.map((pt) => pt.period);
 
     const normToCode = new Map<string, string>();
     costRows.forEach((row) => {
@@ -246,12 +561,17 @@ export function TrendAnalysisPanel({
       if (!normToCode.has(norm)) normToCode.set(norm, row.wbs_code);
     });
 
+    const wbsFilter = new Set(selectedMatrixWbs);
     const rowKeys = new Set<string>();
-    trendData.forEach((pt) => pt.wbsRevenue.forEach((_value, norm) => rowKeys.add(norm)));
+    visiblePoints.forEach((pt) =>
+      pt.wbsRevenue.forEach((_value, norm) => {
+        if (wbsFilter.size === 0 || wbsFilter.has(norm)) rowKeys.add(norm);
+      }),
+    );
 
     let rows = Array.from(rowKeys).map((norm) => {
       const code = normToCode.get(norm) ?? norm;
-      const cells = trendData.map((pt) => pt.wbsRevenue.get(norm) ?? 0);
+      const cells = visiblePoints.map((pt) => pt.wbsRevenue.get(norm) ?? 0);
       return {
         norm,
         code,
@@ -263,6 +583,16 @@ export function TrendAnalysisPanel({
         isUnmapped: !normToCode.has(norm),
       };
     });
+
+    // Excel-style per-column value filters: a row must pass EVERY active column's condition.
+    const activeColumnFilters = periods
+      .map((period, index) => ({ index, filter: columnFilters[period] }))
+      .filter((entry): entry is { index: number; filter: ColumnValueFilter } => isColumnFilterActive(entry.filter));
+    if (activeColumnFilters.length) {
+      rows = rows.filter((row) =>
+        activeColumnFilters.every(({ index, filter }) => cellPassesColumnFilter(row.cells[index]!, filter)),
+      );
+    }
 
     // Only drops rows that are zero in EVERY visible column, so column totals never move.
     if (hideZeroMatrixRows) rows = rows.filter((row) => row.cells.some((value) => value !== 0));
@@ -276,8 +606,10 @@ export function TrendAnalysisPanel({
       rows,
       columnTotals,
       grandTotal: columnTotals.reduce((sum, value) => sum + value, 0),
+      // Any active row filter (column-value or WBS) makes the totals subtotals, not the card figure.
+      hasRowFilter: activeColumnFilters.length > 0 || selectedMatrixWbs.length > 0,
     };
-  }, [trendData, costRows, wbsCodeToDescMap, matrixSort, hideZeroMatrixRows]);
+  }, [trendData, costRows, wbsCodeToDescMap, matrixSort, hideZeroMatrixRows, selectedMatrixWbs, columnFilters]);
 
   // Cost Element Category time series breakdown and Pareto Analysis
   const categoryTrendData = useMemo(() => {
@@ -1850,22 +2182,57 @@ export function TrendAnalysisPanel({
               />
               Hide empty rows
             </label>
-            <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
-              {(["code", "total"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setMatrixSort(mode)}
-                  className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${
-                    matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"
-                  }`}
-                >
-                  {mode === "code" ? "WBS Code" : "Total"}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted">Sort rows by</span>
+              <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
+                {(["code", "total"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    title={
+                      mode === "code"
+                        ? "Order rows by WBS code (ascending)"
+                        : "Order rows by total revenue (largest first)"
+                    }
+                    onClick={() => setMatrixSort(mode)}
+                    className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${
+                      matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"
+                    }`}
+                  >
+                    {mode === "code" ? "WBS Code" : "Total ▾"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Active row-filter chips. WBS filter lives in the WBS header funnel; column filters in each column funnel. */}
+        {(selectedMatrixWbs.length > 0 || wbsRevenueMatrix.hasRowFilter) && (
+          <div className="no-print mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-muted">Active filters:</span>
+            {selectedMatrixWbs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedMatrixWbs([])}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20"
+              >
+                {selectedMatrixWbs.length} WBS selected
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {Object.values(columnFilters).some(isColumnFilterActive) && (
+              <button
+                type="button"
+                onClick={() => setColumnFilters({})}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20"
+              >
+                Clear column filters
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* The measure changes in exactly one column. Say which, and say it every time. */}
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-line/40 bg-panel2/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
@@ -1888,6 +2255,17 @@ export function TrendAnalysisPanel({
           )}
         </div>
 
+        {wbsRevenueMatrix.hasRowFilter && (
+          <div className="mt-2 flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 px-3 py-2 text-[11px] leading-relaxed text-accent">
+            <Filter className="mt-0.5 h-3.5 w-3.5 shrink-0" fill="currentColor" />
+            <span>
+              A row filter is active, so some WBS rows are hidden. The totals below are{" "}
+              <strong>subtotals of the visible rows</strong> and no longer tie to the In Month Rev card. Clear the active
+              filters to restore the full total.
+            </span>
+          </div>
+        )}
+
         {wbsRevenueMatrix.rows.length > 0 && wbsRevenueMatrix.periods.length > 0 ? (
           <div className="mt-4 overflow-x-auto overflow-y-auto max-h-[580px]">
             {/* Width must be inline: Tailwind cannot compile a runtime-interpolated min-w-[Npx].
@@ -1904,7 +2282,14 @@ export function TrendAnalysisPanel({
               <thead className="text-left text-muted/80">
                 <tr>
                   <th className="sticky top-0 left-0 z-30 w-[280px] min-w-[280px] border-b border-line/45 bg-panel2 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] shadow-[1px_0_0_0_rgb(var(--color-line))]">
-                    WBS
+                    <span className="inline-flex items-center">
+                      WBS
+                      <WbsColumnFilter
+                        options={matrixWbsOptions}
+                        selected={selectedMatrixWbs}
+                        onChange={setSelectedMatrixWbs}
+                      />
+                    </span>
                   </th>
                   {wbsRevenueMatrix.periods.map((period) => {
                     const isPoc = period === enginePocPeriod;
@@ -1920,8 +2305,17 @@ export function TrendAnalysisPanel({
                           isPoc ? "border-b-2 border-accent text-accent" : "border-b border-line/45"
                         }`}
                       >
-                        {period}
-                        {isPoc ? "°" : ""}
+                        <span className="inline-flex items-center justify-end">
+                          {period}
+                          {isPoc ? "°" : ""}
+                          <ColumnFilterButton
+                            period={period}
+                            value={columnFilters[period] ?? DEFAULT_COLUMN_FILTER}
+                            onChange={(next) =>
+                              setColumnFilters((prev) => ({ ...prev, [period]: next }))
+                            }
+                          />
+                        </span>
                       </th>
                     );
                   })}
