@@ -17,12 +17,14 @@ export function PMUpdateForm({
   manpowerRates,
   materialMasters,
   projectSubcontracts,
+  submittedBy = '',
 }: {
   projects: ProjectOption[];
   revenueWbs: RevenueWbsOption[];
   manpowerRates: ProjectManpowerRate[];
   materialMasters: ProjectMaterialMaster[];
   projectSubcontracts: ProjectSubcontract[];
+  submittedBy?: string;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -139,6 +141,7 @@ export function PMUpdateForm({
             onChange={setRevenueWbsId}
             name="revenue_wbs_id"
             placeholder="Select revenue WBS"
+            noTruncate
             options={projectWbs.map((item) => ({ value: item.id, label: `${item.wbs_code} - ${item.wbs_description}` }))}
           />
           <input name="update_date" type="date" className={inputClass} defaultValue={new Date().toISOString().slice(0, 10)} />
@@ -290,7 +293,20 @@ export function PMUpdateForm({
           <option value="Approved">Approval Status: Approved</option>
           <option value="Rejected">Approval Status: Rejected</option>
         </select>
-        <input name="submitted_by" placeholder="Submitted by (Username/Email)" className={inputClass} />
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/80">Submitted by</span>
+          {submittedBy ? (
+            <input
+              name="submitted_by"
+              defaultValue={submittedBy}
+              readOnly
+              title="Automatically taken from your signed-in account"
+              className={`${inputClass} cursor-not-allowed bg-panel/40 text-muted`}
+            />
+          ) : (
+            <input name="submitted_by" placeholder="Submitted by (Username/Email)" className={inputClass} />
+          )}
+        </label>
       </section>
 
       <div className="flex items-center gap-3 pt-3 border-t border-line/35">

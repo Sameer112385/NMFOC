@@ -33,7 +33,8 @@ The dashboard serves as an executive-level financial management, progress simula
    * **Cost Element Control**: Include/exclude specific SAP GL cost elements from cost totals.
    * **Subcontract Packages**: Map subcontractor POs to WBS segments.
 6. **Reporting & Insights**: Reports builder (Excel + print), Risk Alerts, Financial Performance (`/simulation`), Source Comparison (`/sap-vs-simulation`), and Comments.
-7. **Access Control**: `Admin` / `Cost Controller` / `Viewer` roles resolved in `lib/current-user.ts`, gating Settings and project-master editing.
+7. **Dashboard Layout Customization** (`lib/dashboard-widgets.ts`, `lib/dashboard-layout.ts`): every dashboard visual (~30 across both tabs) can be shown/hidden **reversibly** — hiding never deletes code. Scope is a **global default plus per-project overrides** (effective = global merged with the project's overrides, project wins). **Admin-only.** Global default is edited in *Settings → Dashboard Layout*; per-project overrides via a *"Customize" gear* on the project dashboard. Stored as a server-side JSON file (`.local-db/dashboard-layout.json`); nothing renders differently until an Admin hides something.
+8. **Access Control**: `Admin` / `Cost Controller` / `Viewer` roles resolved in `lib/current-user.ts`. `canAccessSettings` (Admin or Cost Controller) gates the Settings page and project-master editing; `canManageDashboardLayout` (**Admin only**) gates dashboard-layout editing. Settings is organized into collapsible sub-modules (Dashboard Layout, Company Branding, User Management, System Operations, Danger Zone, Environment Variables, Role Permissions).
 
 ---
 
@@ -104,6 +105,6 @@ Two consequences worth internalising:
 * **Large File Uploads**: GR55 transactional exports can reach 50,000+ rows. Ingestion is batch-inserted in parallel chunks of 2,000 to remain responsive. A full recalculation query uses paginated query helpers (`lib/supabase/pagination.ts`) to bypass Supabase server row caps.
 * **Recalculate is a full rebuild, never incremental**: it re-reads every raw row, rewrites all of `revenue_wbs`, and deletes/re-inserts `risk_alerts` and `simulation_snapshots`. It also **rewrites planned cost/revenue**, so headline figures can move after a recalculate even with no new upload.
 * **New GR55 cost elements are opt-out, not opt-in**: recalculate auto-inserts any unseen cost element into `project_cost_element_control` with `include_in_cost: true`.
-* **Signed-out users currently receive a 500, not a redirect** — a swallowed `redirect()` in `app/(app)/layout.tsx`. See `AI_HANDOVER.md` → Open Issues.
+* **Dashboard-layout UI is unverified in the browser** — storage + APIs are curl-tested, but the authenticated Settings/gear UI was never rendered (agent cannot log in). An Admin should eyeball it. (The earlier signed-out-500 bug from a swallowed `redirect()` in `app/(app)/layout.tsx` is now **fixed**.)
 * **The PO filter does not reach the trend charts, the In Month Rev card, or the WBS × Period matrix** — only the drill-down and WBS tables honour it. See `AI_HANDOVER.md` → Open Issues.
 * **`.next/` is committed to git** (526 files); `.gitignore` lists only `node_modules`.

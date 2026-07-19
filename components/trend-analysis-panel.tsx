@@ -445,6 +445,8 @@ export function TrendAnalysisPanel({
 
   // Interactive Drill-Down State
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
+  // A single WBS (normalized code) to drill into its actual-cost postings across the range.
+  const [drilldownWbs, setDrilldownWbs] = useState<string | null>(null);
   const [drilldownTab, setDrilldownTab] = useState<"sap" | "pm" | "wbs" | "category">("sap");
   const [drilldownSearch, setDrilldownSearch] = useState<string>("");
   const [drilldownPage, setDrilldownPage] = useState<number>(1);
@@ -950,7 +952,7 @@ export function TrendAnalysisPanel({
   }, [filteredWbsRows, trendData, selectedPeriod]);
 
   const rawDrilldownData = useMemo(() => {
-    if (!selectedPeriod && selectedPos.length === 0) return { sap: [], pm: [], wbs: [], category: [] };
+    if (!selectedPeriod && selectedPos.length === 0 && !drilldownWbs) return { sap: [], pm: [], wbs: [], category: [] };
 
     const cleanPeriod = selectedPeriod;
 
@@ -986,6 +988,8 @@ export function TrendAnalysisPanel({
       if (!matchesWbsFilter(row.wbs_code)) return false;
 
       const code = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      // Clicking a WBS in the matrix drills into exactly that WBS's actual cost.
+      if (drilldownWbs && code !== drilldownWbs) return false;
       const config = wbsMasterMap.get(code);
       if (hasWbsMaster && !config) return false;
       const includeInCost = config ? config.include_in_cost !== false : true;
@@ -1031,6 +1035,7 @@ export function TrendAnalysisPanel({
       if (!up.update_date) return false;
       const code = wbsIdToCodeMap.get(up.revenue_wbs_id) || up.revenue_wbs_id;
       if (!matchesWbsFilter(code)) return false;
+      if (drilldownWbs && code.replace(/[^A-Za-z0-9]/g, "").toUpperCase() !== drilldownWbs) return false;
       if (cleanPeriod) {
         return getPeriodKey(up.update_date) === cleanPeriod;
       } else {
@@ -1088,6 +1093,7 @@ export function TrendAnalysisPanel({
     };
   }, [
     selectedPeriod,
+    drilldownWbs,
     gr55Rows,
     updates,
     costRows,
@@ -1102,6 +1108,14 @@ export function TrendAnalysisPanel({
     costViewMode,
     selectedPos,
   ]);
+
+  // Display info for a WBS-scoped drill-down: original code, description, and total actual cost.
+  const drilldownWbsInfo = useMemo(() => {
+    if (!drilldownWbs) return null;
+    const match = costRows.find((r) => normalizeCode(r.wbs_code) === drilldownWbs);
+    const total = rawDrilldownData.sap.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+    return { code: match?.wbs_code ?? drilldownWbs, desc: match?.wbs_description ?? "", total };
+  }, [drilldownWbs, costRows, rawDrilldownData]);
 
   // Filtered Drill-down Data by Search input
   const filteredDrilldown = useMemo(() => {
@@ -1150,6 +1164,7 @@ export function TrendAnalysisPanel({
   const handleChartClick = (state: any) => {
     if (state && state.activeLabel) {
       setSelectedPeriod(state.activeLabel);
+      setDrilldownWbs(null); // period drill-down and WBS drill-down are mutually exclusive
       setDrilldownPage(1);
     }
   };
@@ -1205,7 +1220,7 @@ export function TrendAnalysisPanel({
       XLSX.utils.book_append_sheet(wb, wsMatrix, "Revenue by WBS & Period");
     }
 
-    if (selectedPeriod) {
+    if (selectedPeriod || drilldownWbs) {
       const sapRows = rawDrilldownData.sap.map((row) => ({
         "Posting Date": row.posting_date,
         "WBS Code": row.wbs_code,
@@ -1285,7 +1300,9 @@ export function TrendAnalysisPanel({
       </div>
 
       {/* 1. Filter Bar & Actions (Hidden on Print) */}
-      <div className="no-print sticky top-[138px] z-10 rounded-2xl border border-line/80 bg-panel/90 p-4 shadow-sm backdrop-blur-md">
+      {/* z-30 must exceed the Cost Element card's `relative z-20` below, or this sticky bar's
+          WBS dropdown (z-50, trapped in this stacking context) renders behind that card. */}
+      <div className="no-print sticky top-[138px] z-30 rounded-2xl border border-line/80 bg-panel/90 p-4 shadow-sm backdrop-blur-md">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
             <Filter className="h-4.5 w-4.5 text-accent" />
@@ -2351,7 +2368,22 @@ export function TrendAnalysisPanel({
                   <tr key={row.norm} className="group">
                     <td className="sticky left-0 z-10 w-[280px] min-w-[280px] border-b border-line/30 bg-panel px-4 py-3 shadow-[1px_0_0_0_rgb(var(--color-line))] transition group-hover:bg-panel2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-accent whitespace-nowrap">{row.code}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDrilldownWbs(row.norm);
+                            setSelectedPeriod(null);
+                            setDrilldownTab("sap");
+                            setDrilldownSearch("");
+                            setDrilldownPage(1);
+                          }}
+                          title="Show this WBS's actual cost postings"
+                          className={`font-mono whitespace-nowrap underline-offset-2 hover:underline ${
+                            drilldownWbs === row.norm ? "text-accent font-bold" : "text-accent"
+                          }`}
+                        >
+                          {row.code}
+                        </button>
                         {row.isUnmapped && (
                           <span
                             title="Posted revenue on a WBS that is not present in the WBS master"
@@ -2431,35 +2463,55 @@ export function TrendAnalysisPanel({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line/30 pb-4">
           <div>
             <h3 className="text-base font-bold text-text">
-              {selectedPeriod ? `Contributing Postings for: ${selectedPeriod}` : selectedPos.length > 0 ? `Postings for POs: ${selectedPos.join(', ')}` : "Transaction Drill-down"}
+              {drilldownWbsInfo
+                ? `Actual Cost for: ${drilldownWbsInfo.code}`
+                : selectedPeriod
+                ? `Contributing Postings for: ${selectedPeriod}`
+                : selectedPos.length > 0
+                ? `Postings for POs: ${selectedPos.join(', ')}`
+                : "Transaction Drill-down"}
             </h3>
             <p className="text-xs text-muted mt-1">
-              {selectedPeriod
+              {drilldownWbsInfo
+                ? `${drilldownWbsInfo.desc ? drilldownWbsInfo.desc + " · " : ""}Total actual cost ${formatCurrency(drilldownWbsInfo.total)} across the selected range.`
+                : selectedPeriod
                 ? `Detailed ledger entries and WBS breakdowns contributing to period ${selectedPeriod}.`
                 : selectedPos.length > 0
                 ? `Detailed ledger entries and WBS breakdowns for PO numbers: ${selectedPos.join(', ')}.`
-                : "Click any data point on the trend charts above to inspect specific postings."}
+                : "Click a WBS code in the matrix above to see its actual cost, or click any point on the trend charts to inspect a period."}
             </p>
           </div>
 
-          {(selectedPeriod || selectedPos.length > 0) && (
-            <div className="no-print relative">
-              <input
-                type="text"
-                placeholder="Search listings..."
-                value={drilldownSearch}
-                onChange={(e) => {
-                  setDrilldownSearch(e.target.value);
-                  setDrilldownPage(1);
-                }}
-                className="w-full sm:w-60 rounded-xl border border-line bg-panel2 pl-9 pr-4 py-2 text-xs font-semibold text-text focus:border-accent focus:outline-none"
-              />
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted/80" />
+          {(selectedPeriod || selectedPos.length > 0 || drilldownWbs) && (
+            <div className="no-print flex items-center gap-2">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search listings..."
+                  value={drilldownSearch}
+                  onChange={(e) => {
+                    setDrilldownSearch(e.target.value);
+                    setDrilldownPage(1);
+                  }}
+                  className="w-full sm:w-60 rounded-xl border border-line bg-panel2 pl-9 pr-4 py-2 text-xs font-semibold text-text focus:border-accent focus:outline-none"
+                />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted/80" />
+              </div>
+              {drilldownWbs ? (
+                <button
+                  type="button"
+                  onClick={() => setDrilldownWbs(null)}
+                  className="inline-flex items-center gap-1 rounded-xl border border-line bg-panel2 px-3 py-2 text-xs font-bold text-muted transition hover:text-text"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              ) : null}
             </div>
           )}
         </div>
 
-        {selectedPeriod || selectedPos.length > 0 ? (
+        {selectedPeriod || selectedPos.length > 0 || drilldownWbs ? (
           <div className="mt-5 space-y-4">
             {/* Tab selection for Drill-down categories */}
             <div className="no-print flex border-b border-line/40">

@@ -2,6 +2,7 @@ import { PageShell } from '@/components/ui';
 import { PMUpdateForm } from '@/components/pm-update-form';
 import { PMUpdatesTable } from '@/components/pm-updates-table';
 import { getDailyUpdates, getProjectManpowerRates, getProjectMaterialMaster, getProjects, getProjectSubcontracts, getRevenueGeneratingRows, getSalesOrderRevenueRows } from '@/lib/data';
+import { getCurrentAppUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,8 @@ export default async function PMDailyUpdatesPage() {
     getProjectMaterialMaster(),
     getProjectSubcontracts(),
   ]);
+  const currentUser = await getCurrentAppUser();
+  const submittedBy = currentUser?.fullName || currentUser?.email || '';
   const revenueWbsOptions = mergeRevenueWbsOptions(
     revenueWbs.map((row) => ({
       id: row.id ?? row.wbs_code,
@@ -40,6 +43,7 @@ export default async function PMDailyUpdatesPage() {
         manpowerRates={manpowerRates}
         materialMasters={materialMasters}
         projectSubcontracts={projectSubcontracts}
+        submittedBy={submittedBy}
       />
       <PMUpdatesTable
         updates={updates}

@@ -17,6 +17,9 @@ type DarkSelectProps = {
   name?: string;
   className?: string;
   searchable?: boolean;
+  // When true, dropdown option labels wrap instead of truncating — use for long labels
+  // (e.g. "code - description") so the full text stays visible while searching.
+  noTruncate?: boolean;
 };
 
 export function DarkSelect({
@@ -27,6 +30,7 @@ export function DarkSelect({
   name,
   className,
   searchable = true,
+  noTruncate = false,
 }: DarkSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -111,12 +115,13 @@ export function DarkSelect({
                   setOpen(false);
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-xs font-semibold transition',
+                  'flex w-full justify-between gap-3 rounded-md px-3 py-2 text-left text-xs font-semibold transition',
+                  noTruncate ? 'items-start' : 'items-center',
                   option.value === value ? 'bg-accent/8 text-accent' : 'text-muted hover:bg-panel2/70 hover:text-text',
                 )}
               >
-                <span className="truncate">{option.label}</span>
-                {option.value === value ? <Check className="h-3.5 w-3.5 shrink-0 text-accent" /> : null}
+                <span className={cn(noTruncate ? 'whitespace-normal break-words' : 'truncate')}>{option.label}</span>
+                {option.value === value ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> : null}
               </button>
             ))}
           </div>

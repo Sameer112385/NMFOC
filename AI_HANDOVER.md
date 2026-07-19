@@ -7,11 +7,21 @@ The application is a Next.js 15.5 React application built with TypeScript, style
 * **Storage**: Brand logos (Sidebar and Login page) are uploaded directly into a public Supabase Storage bucket (`cn41-files`), making assets dynamically fetchable.
 * **Pagination & Loading**: A custom paginated Supabase rows fetcher (`lib/supabase/pagination.ts`) is used to fetch datasets exceeding standard REST client caps.
 * **Dual-Mode Data Layer**: Every read in `lib/data.ts` branches on `isLocalDbMode()`. When Supabase env vars are absent the app falls back to `lib/local-db.ts`, a complete JSON-file-backed database used for demos and local scaffolding. Any new data-access function must be implemented on **both** paths.
-* **Auth & RBAC**: Roles are `Admin` / `Cost Controller` / `Viewer`, resolved in `lib/current-user.ts` from the `users_profile` table (falling back to `user_metadata`). `canEditProjectMaster()` and `canAccessSettings()` gate the Settings route and project-master editing. In local-db mode a `sap-cn41-demo-session` cookie stands in for a real session.
+* **Auth & RBAC**: Roles are `Admin` / `Cost Controller` / `Viewer`, resolved in `lib/current-user.ts` from the `users_profile` table (falling back to `user_metadata`). Permission helpers: `canEditProjectMaster()` and `canAccessSettings()` (both Admin **or** Cost Controller) gate project-master editing and the Settings route; `canManageDashboardLayout()` (**Admin only**) gates all dashboard-layout editing. In local-db mode a `sap-cn41-demo-session` cookie stands in for a real session.
 * **The client never receives raw GR55 rows**: `app/(app)/dashboard/[projectId]/page.tsx` loads `getGr55Summaries()` (the pre-aggregated `gr55_summaries` table), **not** `getGr55Rows()`. A 55k-row raw export collapses to roughly 5–6k summary rows, which is what gets serialized to the browser. `getGr55Rows()` currently has no callers.
 
 ### Page & module map
 Beyond the dashboard: **Reports** (`components/reports-builder.tsx`, Excel + print export), **Risk Alerts**, **Financial Performance** (`/simulation`), **Source Comparison** (`/sap-vs-simulation`), **Comments**, **Cost Elements**, **Revenue WBS**, and admin backup/reset endpoints. Note the **Trend Analysis panel lives on `/dashboard/[projectId]`** (the "Trend Analysis" tab inside `DashboardClientWorkspace`) — *not* on `/simulation`, despite the name.
+
+### Dashboard Widget Layout system (show/hide visuals)
+Every dashboard visual can be shown/hidden reversibly — nothing is deleted. Admin-only.
+* **Registry** — `lib/dashboard-widgets.ts`: `DASHBOARD_WIDGETS` lists ~30 widgets (stable `id`, `group`, `title`) across the Financial Summary and Trend Analysis tabs. `isWidgetHidden(layout, id)` is the fail-safe gate: **only an explicit `hidden`/`archived` status hides**; unknown or typo'd ids stay visible, so gating can never accidentally drop a visual.
+* **Storage** — `lib/dashboard-layout.ts`: a single server-side JSON file `.local-db/dashboard-layout.json`, shape `{ global: {<id>:status}, projects: { <projectId>: {<id>:status} } }`. Mirrors `lib/supabase/runtime-config.ts` (there is no settings table). **Backward-compatible**: an older flat `{<id>:status}` file is read as the global map. Effective layout for a project = `global` merged with that project's overrides (**project keys win** — a project can re-show a globally hidden visual with an explicit `active`).
+* **Scope = global default + per-project overrides.**
+  * Global default is edited in **Settings → Dashboard Layout** (`components/dashboard-layout-panel.tsx` → `GET/POST /api/settings/dashboard-layout`).
+  * Per-project overrides are edited via the **"Customize" gear on the project dashboard** (`components/dashboard-customize-panel.tsx` → `GET/POST /api/dashboard-layout/[projectId]`). The gear only renders when `canManageDashboardLayout` is true.
+* **Render path** — `app/(app)/dashboard/[projectId]/page.tsx` calls `getEffectiveDashboardLayout(projectId)` and passes it as `dashboardLayout` to `DashboardClientWorkspace`, which threads it into `TrendAnalysisPanel`. Both components gate each visual with a local `show(id)` helper. Default (no file) = everything visible, so the system is invisible until an Admin hides something.
+* **Settings page** is organized into collapsible `SettingsSection` sub-modules (`components/settings-section.tsx`): Dashboard Layout (Admin-only), Company Branding, User Management, System Operations, Danger Zone, Environment Variables, Role Permissions. Because the Settings page is a Server Component, `SettingsSection` takes an icon **name string** (not a component) and maps it internally. The wrapped panels render "header-less" (their own card + title stripped) to avoid double chrome.
 
 ---
 
@@ -39,6 +49,7 @@ Major operational tables in the Supabase PostgreSQL database:
 * **`/api/settings/supabase` [GET/POST]**: System config settings and environment check.
 * **`/api/pm-updates`**, **`/api/project-wbs-master`**, **`/api/project-cost-elements`**, **`/api/project-subcontracts`**, **`/api/project-masters/*`**: Master-data CRUD; most trigger a recalculate.
 * **`/api/admin/backup`**, **`/api/admin/reset`**, **`/api/admin/users`**: Admin-only; `requireAdminUser()` in `lib/current-user.ts`.
+* **`/api/settings/dashboard-layout` [GET/POST]**: Global dashboard layout (GET open; POST Admin-only). **`/api/dashboard-layout/[projectId]` [GET/POST]**: per-project overrides (GET returns `{ global, project, effective }`; POST Admin-only). Not under `(app)`, so GET is not behind the auth-layout redirect.
 
 **What Recalculate actually does** (`recalculate/route.ts`) — a full rebuild, never incremental:
 1. Resolves the latest `is_latest = true` upload for CN41 / GR55 / Sales Orders (historical revenue and PM updates are fetched project-wide, not per upload).
@@ -68,7 +79,13 @@ Note the uploader **clears previous rows** for the source it replaces, so `gr55_
 
 ## 5. Files Modified Today & Recently
 
-### Latest session — Revenue by WBS & Period matrix
+### Latest session — Dashboard widget layout (show/hide) + per-project overrides
+New files: `lib/dashboard-widgets.ts` (registry + `isWidgetHidden`), `lib/dashboard-layout.ts` (file store: global + per-project, flat-file migration), `components/dashboard-layout-panel.tsx` (global editor), `components/dashboard-customize-panel.tsx` (per-project gear editor), `components/settings-section.tsx` (collapsible sub-module), `app/api/settings/dashboard-layout/route.ts`, `app/api/dashboard-layout/[projectId]/route.ts`.
+Changed: `app/(app)/dashboard/[projectId]/page.tsx` (reads effective layout, passes `dashboardLayout` + `canCustomize`), `components/dashboard-client-workspace.tsx` and `components/trend-analysis-panel.tsx` (gate ~30 visuals via `show(id)`; workspace hosts the Customize gear), `app/(app)/settings/page.tsx` (reorganized into `SettingsSection` accordions; Dashboard Layout section Admin-only), `lib/current-user.ts` (added `canManageDashboardLayout` = Admin-only), and the 4 existing settings panels (`company-logo-panel`, `supabase-connection-panel`, `user-management-panel`, `admin-reset-panel`) had their outer card + title stripped to render header-less inside sections. Also fixed `app/(app)/layout.tsx` (the swallowed `redirect()`). Baseline tag `dashboard-baseline-2026-07` marks the pre-change dashboard.
+
+**Gotcha for the next dev:** the registry gate is fail-safe — a wrong/typo'd `show('...')` id resolves to *visible*, never hidden. Default (no layout file) = everything shown, so the whole system is a no-op until an Admin hides something.
+
+### Earlier session — Revenue by WBS & Period matrix
 * **[trends.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/trends.ts)**:
   * `TrendDataPoint` gained a required **`wbsRevenue: Map<string, number>`** field — the per-WBS decomposition of each period's revenue, keyed by normalized WBS code. The engine already computed this per-WBS detail and discarded it; it is now retained rather than recalculated, which is what guarantees the matrix ties to the card.
   * `normalizeCode()` is now **exported** so consumers join rows on the identical rule.
@@ -104,7 +121,7 @@ Note the uploader **clears previous rows** for the source it replaces, so `gr55_
 ## 6. Open Issues
 
 ### Code bugs
-* **Signed-out users get "Internal Server Error" instead of the login page** *(confirmed, not yet fixed)*: `app/(app)/layout.tsx` calls `redirect('/login')` **inside a `try/catch`**. Next implements `redirect()` by *throwing* a `NEXT_REDIRECT` sentinel, so the bare `catch {}` swallows it — the redirect never fires and the request 500s downstream. Fix: move the `redirect()` call outside the `try`, or re-throw when the error is a `NEXT_REDIRECT`. This also blocks any automated/browser testing of authenticated pages.
+* ~~Signed-out users get "Internal Server Error" instead of the login page~~ **FIXED** (`app/(app)/layout.tsx`): the `redirect('/login')` was inside a `try/catch` that swallowed the `NEXT_REDIRECT` throw, so the request 500'd. Now the session is computed inside the `try` (tolerating Supabase outages) and `redirect()` is called outside it. Verified: signed-out `/dashboard` → 307 `/login`.
 * **`selectedPos` is not passed to `baseTrendData`** (`components/trend-analysis-panel.tsx`): `buildTrendData` accepts `selectedPos`, and `dashboard-client-workspace.tsx` *does* pass it — but the Trend panel does not. So the trend charts, the In Month Rev card, and the WBS × Period matrix are all **PO-blind**, while `filteredWbsRows` and the drill-down table honour the PO filter. With a PO selected, the card and the drill-down describe different populations. Fixing this **will move the card's number**, so it needs its own verification pass.
 * **`getProjectWbsMaster()` does not paginate** (`lib/data.ts`): plain `select` capped at Supabase's default 1000 rows. It would silently truncate above 1000 WBS codes, and that map drives the cost-WBS filter.
 * **`revenue_wbs.reporting_period` drifts per WBS**: each row's period is derived from *that WBS's own* latest posting date, so a project's rows can span many different months (currently 12 distinct values plus 30 nulls). Summing `mtd_revenue_recognition` across them adds different months together. The trends engine does not have this problem (one project-wide period).
@@ -121,7 +138,7 @@ Note the uploader **clears previous rows** for the source it replaces, so `gr55_
 ---
 
 ## 7. Next Recommended Tasks
-1. **Fix the swallowed `redirect()` in `app/(app)/layout.tsx`** — small, and it unblocks browser-based verification of every authenticated page.
+1. **Browser-verify the dashboard-layout UI as an Admin** — the storage + both APIs are curl-verified (migration, inheritance, project-override-wins, 403 for non-admins), but the authenticated UI (Settings accordions + embedded panels, the Customize gear, actual hide-on-dashboard) was never seen because the agent cannot log in. Confirm each embedded panel looks right and hiding a widget removes it.
 2. **Finish the pre-aggregation migration** *(partially done)*: `syncGr55Summaries()` already exists and the **dashboard already reads `gr55_summaries`**. What remains is the calculation path — `app/api/financial-sources/recalculate/route.ts` and `lib/financial-engine.ts` still read raw `gr55_rows`. Verified equivalent: `buildTrendData` produces **identical** results from `gr55_summaries` and raw `gr55_rows`, so the summaries preserve the amounts at month granularity.
 3. **Excel Ingestion Progress Bar**: Add client-side chunking/progress feedback to the uploader component.
 4. **Consider deriving the reporting period project-wide** rather than per-WBS in `lib/calculations.ts`, so `revenue_wbs` stops mixing months (see Open Issues).

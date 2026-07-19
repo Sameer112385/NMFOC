@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DarkSelect } from "@/components/dark-select";
 import { surfaceCard } from "@/components/ui";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, Search } from "lucide-react";
 import type { Project, ProjectManpowerRate, ProjectMaterialMaster, ProjectWbsMaster, RevenueWBS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +62,7 @@ export function ProjectMasterAdminPanel({
 
   const [localRates, setLocalRates] = useState<ProjectManpowerRate[]>(manpowerRates);
   const [localMaterials, setLocalMaterials] = useState<ProjectMaterialMaster[]>(materialMasters);
+  const [materialSearch, setMaterialSearch] = useState("");
 
   useEffect(() => {
     setLocalRates(manpowerRates);
@@ -99,6 +100,24 @@ export function ProjectMasterAdminPanel({
         .sort((a, b) => a.revenue_wbs_code.localeCompare(b.revenue_wbs_code) || a.material_code.localeCompare(b.material_code)),
     [projectId, localMaterials],
   );
+  // wbs_code -> description, so the material search can also match on the WBS description
+  // (which is not stored on the material row itself).
+  const wbsDescriptionByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    materialWbsOptions.forEach((row) => {
+      if (row.wbs_code) map.set(row.wbs_code, row.wbs_description ?? "");
+    });
+    return map;
+  }, [materialWbsOptions]);
+  const filteredMaterials = useMemo(() => {
+    const term = materialSearch.trim().toLowerCase();
+    if (!term) return projectMaterials;
+    return projectMaterials.filter((m) => {
+      const wbsDesc = wbsDescriptionByCode.get(m.revenue_wbs_code ?? "") ?? "";
+      return [m.material_code, m.material_description, m.revenue_wbs_code, wbsDesc]
+        .some((field) => String(field ?? "").toLowerCase().includes(term));
+    });
+  }, [projectMaterials, materialSearch, wbsDescriptionByCode]);
   const showProjectSelector = !fixedProjectId;
   const resolvedTab = section === "full" ? activeTab : section;
 
@@ -672,8 +691,25 @@ export function ProjectMasterAdminPanel({
           </fieldset>
 
           <div className="space-y-2">
-            <div className="text-xs font-bold text-muted uppercase tracking-wider pb-1">Current Material Master (Double click to edit)</div>
-            {projectMaterials.length ? projectMaterials.map((material) => {
+            <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs font-bold text-muted uppercase tracking-wider">Current Material Master (Double click to edit)</div>
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted/70" />
+                <input
+                  value={materialSearch}
+                  onChange={(e) => setMaterialSearch(e.target.value)}
+                  placeholder="Search material, WBS, or description..."
+                  className="w-full rounded-lg border border-line bg-panel pl-9 pr-3 py-2 text-xs text-text outline-none placeholder:text-muted/60 focus:border-accent focus:ring-1 focus:ring-accent"
+                />
+              </div>
+            </div>
+            {!projectMaterials.length ? (
+              <div className="text-xs font-medium text-muted bg-panel/30 border border-dashed border-line p-4 text-center rounded-xl">No project material master maintained for this project yet.</div>
+            ) : !filteredMaterials.length ? (
+              <div className="text-xs font-medium text-muted bg-panel/30 border border-dashed border-line p-4 text-center rounded-xl">
+                No materials match “{materialSearch}”.
+              </div>
+            ) : filteredMaterials.map((material) => {
               const isEditing = editingId === material.id && editingType === "material";
               return (
                 <div
@@ -787,7 +823,7 @@ export function ProjectMasterAdminPanel({
                   )}
                 </div>
               );
-            }) : <div className="text-xs font-medium text-muted bg-panel/30 border border-dashed border-line p-4 text-center rounded-xl">No project material master maintained for this project yet.</div>}
+            })}
           </div>
         </div>
       ) : null}
