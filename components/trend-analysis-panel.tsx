@@ -124,6 +124,8 @@ interface TrendAnalysisPanelProps {
   poOptions: string[];
   historicalRevenueRows?: HistoricalRevenueRow[];
   dashboardLayout?: DashboardLayout;
+  canCustomize?: boolean;
+  trendsOrder?: string[];
 }
 
 // ---- Per-column (period) value filter, Excel-autofilter style ----
@@ -429,7 +431,12 @@ export function TrendAnalysisPanel({
   poOptions,
   historicalRevenueRows = [],
   dashboardLayout,
+  canCustomize: _canCustomize = false,
+  trendsOrder: _trendsOrder = [],
 }: TrendAnalysisPanelProps) {
+  // canCustomize/trendsOrder are accepted now; the Trends drag-reorder grid is the next phase.
+  void _canCustomize;
+  void _trendsOrder;
   // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual.
   const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
   // Filters State (Project & Customer are removed as they are contextually fixed)

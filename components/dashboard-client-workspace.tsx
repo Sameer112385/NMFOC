@@ -15,11 +15,13 @@ import {
   RevenueTrendChart,
 } from "@/components/charts";
 import { getEffectivePendingCost } from "@/lib/pm-posting";
-import { Briefcase, Coins, Percent, TrendingUp, Activity, ShieldAlert, DollarSign, Filter } from "lucide-react";
+import { Briefcase, Coins, Percent, TrendingUp, Activity, ShieldAlert, DollarSign, Filter, LayoutGrid, Loader2, X } from "lucide-react";
 import { TrendAnalysisPanel } from "@/components/trend-analysis-panel";
 import { DashboardCustomizePanel } from "@/components/dashboard-customize-panel";
-import { isWidgetHidden, type DashboardLayout } from "@/lib/dashboard-widgets";
+import { DashboardGrid, type GridItem } from "@/components/dashboard-grid";
+import { isWidgetHidden, getWidget, type DashboardLayout } from "@/lib/dashboard-widgets";
 import { SlidersHorizontal } from "lucide-react";
+import { type ReactNode } from "react";
 import { buildTrendData } from "@/lib/trends";
 import { MultiWbsSelect } from "@/components/multi-wbs-select";
 import type {
@@ -110,6 +112,8 @@ interface DashboardClientWorkspaceProps {
   historicalRevenueRows?: HistoricalRevenueRow[];
   dashboardLayout?: DashboardLayout;
   canCustomize?: boolean;
+  summaryOrder?: string[];
+  trendsOrder?: string[];
 }
 
 export function DashboardClientWorkspace({
@@ -127,12 +131,16 @@ export function DashboardClientWorkspace({
   historicalRevenueRows = [],
   dashboardLayout,
   canCustomize = false,
+  summaryOrder = [],
+  trendsOrder = [],
 }: DashboardClientWorkspaceProps) {
-  // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual;
-  // an unknown or typo'd id stays visible, so gating can never accidentally hide something.
-  const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
   const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
   const [customizing, setCustomizing] = useState(false);
+  // Layout edit mode (drag to reorder the Summary tab). editOrder is the full summary order.
+  const [editingLayout, setEditingLayout] = useState(false);
+  const [editOrder, setEditOrder] = useState<string[]>([]);
+  const [savingLayout, setSavingLayout] = useState(false);
+  const [layoutMsg, setLayoutMsg] = useState("");
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [selectedPos, setSelectedPos] = useState<string[]>([]);
 
@@ -253,6 +261,271 @@ export function DashboardClientWorkspace({
     ([name, value]) => ({ name, value })
   );
 
+  // YTD category totals (lifted out of the old inline IIFE so it doesn't re-run on every drag).
+  const ytdCategoryTotals = useMemo(() => {
+    const currentYearString = new Date().getFullYear().toString();
+    let subconTotal = 0;
+    let materialTotal = 0;
+    let manpowerTotal = 0;
+    gr55Rows.forEach((row) => {
+      if (selectedWbs.length > 0) {
+        const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        if (!selectedWbs.some((f) => rowNorm.startsWith(f.replace(/[^A-Za-z0-9]/g, "").toUpperCase()))) return;
+      }
+      if (wbsCodesForSelectedPo) {
+        const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        if (!wbsCodesForSelectedPo.has(rowNorm)) return;
+      }
+      if ((row.posting_date ? row.posting_date.slice(0, 4) : "") !== currentYearString) return;
+      const cat = String(row.cost_category || "").toLowerCase();
+      const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
+      const amt = row.amount || 0;
+      if (btx === "COIE") materialTotal += amt;
+      else if (cat.includes("subcontract")) subconTotal += amt;
+      else if (cat.includes("material") || cat.includes("consumable") || cat.includes("transportation") || cat.includes("transp")) materialTotal += amt;
+      else if (cat.includes("labour") || cat.includes("labor") || cat.includes("manpower") || cat.includes("time cost") || cat.includes("hour")) manpowerTotal += amt;
+    });
+    return { subconTotal, materialTotal, manpowerTotal };
+  }, [gr55Rows, selectedWbs, wbsCodesForSelectedPo]);
+
+  // --- Summary layout (data-driven, reorderable) ---
+  // Visibility: fail-safe hide gate + per-item data gates. Unknown ids stay visible.
+  const isSummaryVisible = (id: string): boolean => {
+    if (isWidgetHidden(dashboardLayout, id)) return false;
+    if (id === "summary.panel.pendingForPosting" && !latestPmUpdate) return false;
+    if ((id.startsWith("summary.chart.") || id === "summary.table.wbsFinancialAnalysis") && !revenueRows.length) return false;
+    return true;
+  };
+  const isHeavySummary = (id: string) => id.startsWith("summary.chart.") || id === "summary.table.wbsFinancialAnalysis";
+
+  // Inner content of each summary visual, keyed by id (closure over all computed vars above).
+  const renderSummaryWidget = (id: string): ReactNode => {
+    switch (id) {
+      case "summary.card.plannedCost":
+        return <StatCard title="Planned Cost" value={formatCurrency(plannedCost)} icon={Briefcase} tone="accent" group="cost" />;
+      case "summary.card.mgmtActualCost":
+        return <StatCard title="Management Actual Cost" value={formatCurrency(actualCost)} icon={Coins} tone="accent" group="cost" hint="GR55 actual + active PM simulated cost" />;
+      case "summary.card.plannedRevenue":
+        return <StatCard title="Planned Revenue" value={formatCurrency(plannedRevenue)} icon={DollarSign} tone="success" group="revenue" />;
+      case "summary.card.recognizedRevenue":
+        return <StatCard title="Recognized Revenue" value={formatCurrency(recognizedRevenue)} icon={TrendingUp} tone="success" group="revenue" hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC" />;
+      case "summary.card.forecastMargin":
+        return <StatCard title="Forecast Margin" value={formatCurrency(forecastMargin)} icon={Percent} tone={forecastMargin >= 0 ? "success" : "danger"} group="margin" />;
+      case "summary.card.pocPercent":
+        return <StatCard title="POC %" value={formatPercent(pocPercent)} icon={Percent} tone="success" group="progress" />;
+      case "summary.panel.sapView":
+        return (
+          <div className="surface-card h-full p-5">
+            <h3 className="text-base font-semibold text-text">SAP View</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
+              <StatRow label="SAP POC %" value={formatPercent(sapPocPercent)} />
+              <StatRow label="SAP recognized revenue" value={formatCurrency(sapRecognizedRevenue)} />
+              <StatRow label="SAP margin" value={formatCurrency(sapMargin)} />
+            </div>
+          </div>
+        );
+      case "summary.panel.managementView":
+        return (
+          <div className="surface-card h-full p-5">
+            <h3 className="text-base font-semibold text-text">Management View</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
+              <StatRow label="PM simulated cost" value={formatCurrency(pmSimulatedCost)} />
+              <StatRow label="Management actual cost" value={formatCurrency(actualCost)} />
+              <StatRow label="Management POC %" value={formatPercent(pocPercent)} />
+              <StatRow label="Management recognized revenue" value={formatCurrency(recognizedRevenue)} />
+              <StatRow label="Management margin" value={formatCurrency(managementMargin)} />
+            </div>
+          </div>
+        );
+      case "summary.panel.projectToDate":
+        return (
+          <div className="surface-card h-full p-5">
+            <h3 className="text-base font-semibold text-text">Project-to-Date</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="Remaining revenue" value={formatCurrency(remainingRevenue)} />
+              <StatRow label="Remaining cost" value={formatCurrency(remainingCost)} />
+              <StatRow label="Forecast margin %" value={formatPercent(forecastMarginPercent)} />
+              <StatRow label="Opening recognized revenue" value={formatCurrency(openingRecognizedRevenue)} />
+              <StatRow label="Current month revenue recognition" value={formatCurrency(currentMonthRevenue)} />
+            </div>
+          </div>
+        );
+      case "summary.panel.ytdPerformance":
+        return (
+          <div className="surface-card h-full p-5">
+            <h3 className="text-base font-semibold text-text">YTD Performance</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="YTD Actual cost" value={formatCurrency(ytdActual)} />
+              <StatRow label="YTD Revenue" value={formatCurrency(ytdRevenue)} />
+              <StatRow label="YTD Subcon Cost" value={formatCurrency(ytdCategoryTotals.subconTotal)} />
+              <StatRow label="YTD Material Cost" value={formatCurrency(ytdCategoryTotals.materialTotal)} />
+              <StatRow label="YTD Manpower Cost" value={formatCurrency(ytdCategoryTotals.manpowerTotal)} />
+            </div>
+          </div>
+        );
+      case "summary.panel.periodRollups":
+        return (
+          <div className="surface-card h-full p-5">
+            <h3 className="text-base font-semibold text-text">Period Rollups</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="MTD actual cost" value={formatCurrency(mtdActual)} />
+              <StatRow label="YTD actual cost" value={formatCurrency(ytdActual)} />
+              <StatRow label="Open PM updates" value={String(updates.length)} />
+              <StatRow label="Open risk alerts" value={String(risks.length)} />
+              <StatRow label="Project status" value={project.status ?? "Active"} />
+            </div>
+          </div>
+        );
+      case "summary.chart.revenueTrend":
+        return (
+          <RevenueTrendChart
+            data={trendData.map((pt) => ({ ...pt, recognizedRevenue: pt.forecastRevenue, cumulativeRecognizedRevenue: pt.cumulativeForecastRevenue }))}
+          />
+        );
+      case "summary.chart.revenueSplit":
+        return <RevenueSplitChart recognized={recognizedRevenue} remaining={Math.max(0, remainingRevenue)} total={plannedRevenue} />;
+      case "summary.chart.pocByWbs":
+        return <PocChart data={filteredCostRows.map((row) => ({ name: row.wbs_code, value: row.poc_percent }))} />;
+      case "summary.chart.revenueVsSimulation":
+        return <RevenueVsSimulationChart data={filteredRevenueRows.map((row) => ({ name: row.wbs_code, sap: row.sap_earned_revenue ?? 0, simulated: row.recognized_revenue_to_date }))} />;
+      case "summary.chart.costComparison":
+        return <CostComparisonChart data={filteredCostRows.map((row) => ({ name: row.wbs_code, sap: row.sap_actual_cost ?? 0, simulated: row.actual_cost_to_date }))} />;
+      case "summary.chart.topWbs":
+        return (
+          <TopWbsChart
+            data={filteredRevenueRows.slice().sort((a, b) => b.recognized_revenue_to_date - a.recognized_revenue_to_date).slice(0, 6).map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.recognized_revenue_to_date }))}
+          />
+        );
+      case "summary.table.wbsFinancialAnalysis":
+        return (
+          <div className="rounded-3xl border border-line/70 bg-panel/70 p-5">
+            <h3 className="text-base font-semibold text-text">WBS Financial Analysis</h3>
+            <p className="text-sm text-muted">Filter the WBS rows for the active project.</p>
+            <div className="mt-4">
+              <DashboardWbsFilter
+                rows={filteredCostRows}
+                selectedPos={selectedPos}
+                setSelectedPos={setSelectedPos}
+                poOptions={poOptions}
+                gr55Rows={gr55Rows}
+                historicalRevenueRows={historicalRevenueRows}
+                updates={updates}
+                projectWbsMaster={projectWbsMaster}
+                costElementControl={costElementControl}
+              />
+            </div>
+          </div>
+        );
+      case "summary.panel.projectDetails":
+        return (
+          <div className="surface-card h-full p-6">
+            <h3 className="text-base font-semibold text-text">Project Details</h3>
+            <div className="mt-4 space-y-1">
+              <StatRow label="Project Code" value={project.project_code} />
+              <StatRow label="Client" value={project.client_name ?? "-"} />
+              <StatRow label="Current Status" value={project.status ?? "Active"} />
+              <StatRow label="Daily PM Updates" value={String(updates.length)} />
+            </div>
+          </div>
+        );
+      case "summary.panel.pendingForPosting":
+        return latestPmUpdate ? (
+          <div className="surface-card h-full p-6">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-text">
+              <Activity className="h-5 w-5 text-warning" />
+              Pending for Posting
+            </h3>
+            <div className="mt-4 rounded-2xl border border-line/70 bg-panel2/70 px-4 py-4">
+              <div className="section-kicker text-muted">Total Pending Cost</div>
+              <div className="data-value mt-2 text-[1.2rem] font-semibold text-text">{formatCurrency(getEffectivePendingCost(latestPmUpdate))}</div>
+            </div>
+            <div className="mt-4 space-y-1">
+              <StatRow label="PM Expected Progress %" value={formatPercent(clampPercent(latestPmUpdate.expected_progress))} />
+              <StatRow label="Material Cost" value={formatCurrency(latestPmUpdate.pending_material_cost)} />
+              <StatRow label="Subcontractor Cost" value={formatCurrency(latestPmUpdate.pending_subcontractor_cost)} />
+              <StatRow label="Manpower Cost" value={formatCurrency(latestPmUpdate.pending_manpower_cost)} />
+            </div>
+          </div>
+        ) : null;
+      case "summary.panel.topRiskExposure":
+        return (
+          <div className="surface-card h-full p-6">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-text">
+              <ShieldAlert className="h-5 w-5 text-danger" />
+              Top Risk Exposure
+            </h3>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {risks.slice(0, 4).map((risk, index) => (
+                <div key={`${risk.wbs_code}-${index}`} className="rounded-2xl border border-line/70 bg-panel2/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="truncate text-sm font-semibold text-text">{risk.risk_type}</div>
+                    <Badge tone={risk.severity === "High" ? "danger" : risk.severity === "Medium" ? "warning" : "success"}>{risk.severity}</Badge>
+                  </div>
+                  <div className="mt-2 text-xs font-medium text-muted">{risk.wbs_code}</div>
+                  <div className="mt-1 text-sm text-muted">{risk.risk_description}</div>
+                </div>
+              ))}
+              {!risks.length ? <div className="py-6 text-center text-sm text-muted sm:col-span-2">No open risks found.</div> : null}
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Lightweight stand-in for heavy widgets while dragging.
+  const summaryPlaceholder = (id: string): ReactNode => {
+    const w = getWidget(id);
+    return (
+      <div className="flex h-40 flex-col items-center justify-center rounded-3xl border border-dashed border-accent/40 bg-panel2/40 text-center">
+        <LayoutGrid className="h-6 w-6 text-accent/60" />
+        <div className="mt-2 text-sm font-bold text-text">{w?.title ?? id}</div>
+        <div className="text-[11px] text-muted">Drag to reposition</div>
+      </div>
+    );
+  };
+
+  const summaryRenderOrder = editingLayout ? editOrder : summaryOrder;
+  const summaryItems: GridItem[] = summaryRenderOrder
+    .filter((id) => getWidget(id)?.tab === "summary" && isSummaryVisible(id))
+    .map((id) => {
+      const w = getWidget(id)!;
+      return { id, span: w.span, title: w.title, node: renderSummaryWidget(id), placeholder: isHeavySummary(id) ? summaryPlaceholder(id) : undefined };
+    });
+
+  const startEditLayout = () => {
+    setLayoutMsg("");
+    setEditOrder(summaryOrder.length ? [...summaryOrder] : summaryItems.map((it) => it.id));
+    setEditingLayout(true);
+    setCustomizing(false);
+  };
+  const applySummaryReorder = (visibleIds: string[]) => {
+    setEditOrder((full) => {
+      const visible = new Set(full.filter((id) => getWidget(id)?.tab === "summary" && isSummaryVisible(id)));
+      let i = 0;
+      return full.map((id) => (visible.has(id) ? visibleIds[i++]! : id));
+    });
+  };
+  const saveLayout = async () => {
+    setSavingLayout(true);
+    setLayoutMsg("");
+    try {
+      const res = await fetch(`/api/dashboard-layout/${project.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: editOrder, tab: "summary" }),
+      });
+      if (!res.ok) throw new Error();
+      window.location.reload();
+    } catch {
+      setSavingLayout(false);
+      setLayoutMsg("Could not save layout. You may not have permission.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Sticky Tab Selector (Hidden on Print) */}
@@ -278,18 +551,30 @@ export function DashboardClientWorkspace({
               Trend Analysis
             </button>
           </div>
-          {canCustomize ? (
-            <button
-              onClick={() => setCustomizing((c) => !c)}
-              title="Show or hide visuals for this project"
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all duration-100",
-                customizing ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
-              )}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Customize
-            </button>
+          {canCustomize && !editingLayout ? (
+            <div className="flex items-center gap-1">
+              {activeTab === "summary" ? (
+                <button
+                  onClick={startEditLayout}
+                  title="Drag to rearrange the Summary visuals"
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-muted transition-all duration-100 hover:bg-panel2 hover:text-text"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  Edit layout
+                </button>
+              ) : null}
+              <button
+                onClick={() => setCustomizing((c) => !c)}
+                title="Show or hide visuals for this project"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all duration-100",
+                  customizing ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+                )}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Customize
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -322,316 +607,43 @@ export function DashboardClientWorkspace({
             </div>
           </div>
 
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-            {/* Cost Cards */}
-            {show('summary.card.plannedCost') && (
-              <StatCard title="Planned Cost" value={formatCurrency(plannedCost)} icon={Briefcase} tone="accent" group="cost" />
-            )}
-            {show('summary.card.mgmtActualCost') && (
-              <StatCard
-                title="Management Actual Cost"
-                value={formatCurrency(actualCost)}
-                icon={Coins}
-                tone="accent"
-                group="cost"
-                hint="GR55 actual + active PM simulated cost"
-              />
-            )}
-
-            {/* Revenue Cards */}
-            {show('summary.card.plannedRevenue') && (
-              <StatCard title="Planned Revenue" value={formatCurrency(plannedRevenue)} icon={DollarSign} tone="success" group="revenue" />
-            )}
-            {show('summary.card.recognizedRevenue') && (
-              <StatCard
-                title="Recognized Revenue"
-                value={formatCurrency(recognizedRevenue)}
-                icon={TrendingUp}
-                tone="success"
-                group="revenue"
-                hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC"
-              />
-            )}
-
-            {/* Margin & Progress Cards */}
-            {show('summary.card.forecastMargin') && (
-              <StatCard
-                title="Forecast Margin"
-                value={formatCurrency(forecastMargin)}
-                icon={Percent}
-                tone={forecastMargin >= 0 ? "success" : "danger"}
-                group="margin"
-              />
-            )}
-            {show('summary.card.pocPercent') && (
-              <StatCard title="POC %" value={formatPercent(pocPercent)} icon={Percent} tone="success" group="progress" />
-            )}
-          </div>
-
-          {(show('summary.panel.sapView') || show('summary.panel.managementView')) && (
-            <div className="grid gap-4 xl:grid-cols-2">
-              {show('summary.panel.sapView') && (
-                <div className="surface-card p-5">
-                  <h3 className="text-base font-semibold text-text">SAP View</h3>
-                  <div className="mt-4 space-y-1">
-                    <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
-                    <StatRow label="SAP POC %" value={formatPercent(sapPocPercent)} />
-                    <StatRow label="SAP recognized revenue" value={formatCurrency(sapRecognizedRevenue)} />
-                    <StatRow label="SAP margin" value={formatCurrency(sapMargin)} />
-                  </div>
-                </div>
-              )}
-              {show('summary.panel.managementView') && (
-                <div className="surface-card p-5">
-                  <h3 className="text-base font-semibold text-text">Management View</h3>
-                  <div className="mt-4 space-y-1">
-                    <StatRow label="GR55 actual cost" value={formatCurrency(sapActualCost)} />
-                    <StatRow label="PM simulated cost" value={formatCurrency(pmSimulatedCost)} />
-                    <StatRow label="Management actual cost" value={formatCurrency(actualCost)} />
-                    <StatRow label="Management POC %" value={formatPercent(pocPercent)} />
-                    <StatRow label="Management recognized revenue" value={formatCurrency(recognizedRevenue)} />
-                    <StatRow label="Management margin" value={formatCurrency(managementMargin)} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* YTD Performance Metrics Row */}
-          {(show('summary.panel.projectToDate') || show('summary.panel.ytdPerformance') || show('summary.panel.periodRollups')) && (
-          <div className="grid gap-4 xl:grid-cols-3">
-            {show('summary.panel.projectToDate') && (
-            <div className="surface-card p-5">
-              <h3 className="text-base font-semibold text-text">Project-to-Date</h3>
-              <div className="mt-4 space-y-1">
-                <StatRow label="Remaining revenue" value={formatCurrency(remainingRevenue)} />
-                <StatRow label="Remaining cost" value={formatCurrency(remainingCost)} />
-                <StatRow label="Forecast margin %" value={formatPercent(forecastMarginPercent)} />
-                <StatRow label="Opening recognized revenue" value={formatCurrency(openingRecognizedRevenue)} />
-                <StatRow label="Current month revenue recognition" value={formatCurrency(currentMonthRevenue)} />
+          {editingLayout ? (
+            <div className="no-print sticky top-[132px] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-accent">
+                <LayoutGrid className="h-4 w-4 shrink-0" />
+                <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> · {layoutMsg}</span> : null}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingLayout(false)}
+                  disabled={savingLayout}
+                  className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel2 px-3 py-1.5 text-[11px] font-bold text-muted transition hover:text-text disabled:opacity-40"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveLayout}
+                  disabled={savingLayout}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-accent/90 disabled:opacity-40"
+                >
+                  {savingLayout ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Save &amp; apply
+                </button>
               </div>
             </div>
-            )}
-
-            {show('summary.panel.ytdPerformance') && (
-            <div className="surface-card p-5">
-              <h3 className="text-base font-semibold text-text">YTD Performance</h3>
-              <div className="mt-4 space-y-1">
-                {(() => {
-                  // Filter gr55Rows for YTD actuals that match the current WBS codes filter
-                  const currentYearString = new Date().getFullYear().toString();
-                  
-                  // Filter to matched WBS set
-                  const matchedGr55 = gr55Rows.filter((row) => {
-                    // Match selected WBS filter
-                    if (selectedWbs.length > 0) {
-                      const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-                      const match = selectedWbs.some((f) => {
-                        const fNorm = f.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-                        return rowNorm.startsWith(fNorm);
-                      });
-                      if (!match) return false;
-                    }
-                    // Match selected PO filter
-                    if (wbsCodesForSelectedPo) {
-                      const rowNorm = row.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-                      if (!wbsCodesForSelectedPo.has(rowNorm)) return false;
-                    }
-                    // Date must be this calendar year
-                    const yr = row.posting_date ? row.posting_date.slice(0, 4) : "";
-                    return yr === currentYearString;
-                  });
-
-                  // Accumulate category totals
-                  let subconTotal = 0;
-                  let materialTotal = 0;
-                  let manpowerTotal = 0;
-
-                  matchedGr55.forEach((row) => {
-                    const cat = String(row.cost_category || "").toLowerCase();
-                    const btx = String(row.raw_data_json?.business_transaction || "").toUpperCase();
-                    const amt = row.amount || 0;
-
-                    if (btx === "COIE") {
-                      materialTotal += amt;
-                    } else if (cat.includes("subcontract")) {
-                      subconTotal += amt;
-                    } else if (cat.includes("material") || cat.includes("consumable") || cat.includes("transportation") || cat.includes("transp")) {
-                      materialTotal += amt;
-                    } else if (cat.includes("labour") || cat.includes("labor") || cat.includes("manpower") || cat.includes("time cost") || cat.includes("hour")) {
-                      manpowerTotal += amt;
-                    }
-                  });
-
-                  return (
-                    <>
-                      <StatRow label="YTD Actual cost" value={formatCurrency(ytdActual)} />
-                      <StatRow label="YTD Revenue" value={formatCurrency(ytdRevenue)} />
-                      <StatRow label="YTD Subcon Cost" value={formatCurrency(subconTotal)} />
-                      <StatRow label="YTD Material Cost" value={formatCurrency(materialTotal)} />
-                      <StatRow label="YTD Manpower Cost" value={formatCurrency(manpowerTotal)} />
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-            )}
-
-            {show('summary.panel.periodRollups') && (
-            <div className="surface-card p-5">
-              <h3 className="text-base font-semibold text-text">Period Rollups</h3>
-              <div className="mt-4 space-y-1">
-                <StatRow label="MTD actual cost" value={formatCurrency(mtdActual)} />
-                <StatRow label="YTD actual cost" value={formatCurrency(ytdActual)} />
-                <StatRow label="Open PM updates" value={String(updates.length)} />
-                <StatRow label="Open risk alerts" value={String(risks.length)} />
-                <StatRow label="Project status" value={project.status ?? "Active"} />
-              </div>
-            </div>
-            )}
-          </div>
-          )}
+          ) : null}
 
           {!revenueRows.length ? (
             <div className="rounded-3xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
               No revenue rows were generated yet. Upload the Sales Order file first so the WBS revenue can be built from
               Net Value, then add CN41 planned cost and GR55 actual cost if available.
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                {show('summary.chart.revenueTrend') && (
-                <RevenueTrendChart
-                  data={trendData.map((pt) => ({
-                    ...pt,
-                    recognizedRevenue: pt.forecastRevenue,
-                    cumulativeRecognizedRevenue: pt.cumulativeForecastRevenue,
-                  }))}
-                />
-                )}
-                {show('summary.chart.revenueSplit') && (
-                <RevenueSplitChart recognized={recognizedRevenue} remaining={Math.max(0, remainingRevenue)} total={plannedRevenue} />
-                )}
-                {show('summary.chart.pocByWbs') && (
-                <PocChart data={filteredCostRows.map((row) => ({ name: row.wbs_code, value: row.poc_percent }))} />
-                )}
-                {show('summary.chart.revenueVsSimulation') && (
-                <RevenueVsSimulationChart
-                  data={filteredRevenueRows.map((row) => ({
-                    name: row.wbs_code,
-                    sap: row.sap_earned_revenue ?? 0,
-                    simulated: row.recognized_revenue_to_date,
-                  }))}
-                />
-                )}
-                {show('summary.chart.costComparison') && (
-                <CostComparisonChart
-                  data={filteredCostRows.map((row) => ({
-                    name: row.wbs_code,
-                    sap: row.sap_actual_cost ?? 0,
-                    simulated: row.actual_cost_to_date,
-                  }))}
-                />
-                )}
-                {show('summary.chart.topWbs') && (
-                <TopWbsChart
-                  data={filteredRevenueRows
-                    .slice()
-                    .sort((a, b) => b.recognized_revenue_to_date - a.recognized_revenue_to_date)
-                    .slice(0, 6)
-                    .map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.recognized_revenue_to_date }))}
-                />
-                )}
-              </div>
+          ) : null}
 
-              {show('summary.table.wbsFinancialAnalysis') && (
-              <div className="rounded-3xl border border-line/70 bg-panel/70 p-5">
-                <h3 className="text-base font-semibold text-text">WBS Financial Analysis</h3>
-                <p className="text-sm text-muted">Filter the WBS rows for the active project.</p>
-                <div className="mt-4">
-                  <DashboardWbsFilter
-                    rows={filteredCostRows}
-                    selectedPos={selectedPos}
-                    setSelectedPos={setSelectedPos}
-                    poOptions={poOptions}
-                    gr55Rows={gr55Rows}
-                    historicalRevenueRows={historicalRevenueRows}
-                    updates={updates}
-                    projectWbsMaster={projectWbsMaster}
-                    costElementControl={costElementControl}
-                  />
-                </div>
-              </div>
-              )}
-            </div>
-          )}
-
-          {(show('summary.panel.projectDetails') || (latestPmUpdate && show('summary.panel.pendingForPosting')) || show('summary.panel.topRiskExposure')) && (
-          <div className="grid gap-6 xl:grid-cols-2">
-            {show('summary.panel.projectDetails') && (
-            <div className="surface-card p-6">
-              <h3 className="text-base font-semibold text-text">Project Details</h3>
-              <div className="mt-4 space-y-1">
-                <StatRow label="Project Code" value={project.project_code} />
-                <StatRow label="Client" value={project.client_name ?? "-"} />
-                <StatRow label="Current Status" value={project.status ?? "Active"} />
-                <StatRow label="Daily PM Updates" value={String(updates.length)} />
-              </div>
-            </div>
-            )}
-
-            {latestPmUpdate && show('summary.panel.pendingForPosting') ? (
-              <div className="surface-card p-6">
-                <h3 className="flex items-center gap-2 text-base font-semibold text-text">
-                  <Activity className="h-5 w-5 text-warning" />
-                  Pending for Posting
-                </h3>
-                <div className="mt-4 rounded-2xl border border-line/70 bg-panel2/70 px-4 py-4">
-                  <div className="section-kicker text-muted">Total Pending Cost</div>
-                  <div className="data-value mt-2 text-[1.2rem] font-semibold text-text">
-                    {formatCurrency(getEffectivePendingCost(latestPmUpdate))}
-                  </div>
-                </div>
-                <div className="mt-4 space-y-1">
-                  <StatRow label="PM Expected Progress %" value={formatPercent(clampPercent(latestPmUpdate.expected_progress))} />
-                  <StatRow label="Material Cost" value={formatCurrency(latestPmUpdate.pending_material_cost)} />
-                  <StatRow label="Subcontractor Cost" value={formatCurrency(latestPmUpdate.pending_subcontractor_cost)} />
-                  <StatRow label="Manpower Cost" value={formatCurrency(latestPmUpdate.pending_manpower_cost)} />
-                </div>
-              </div>
-            ) : null}
-
-            {show('summary.panel.topRiskExposure') && (
-            <div className="surface-card p-6 xl:col-span-2">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-text">
-                <ShieldAlert className="h-5 w-5 text-danger" />
-                Top Risk Exposure
-              </h3>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {risks.slice(0, 4).map((risk, index) => (
-                  <div key={`${risk.wbs_code}-${index}`} className="rounded-2xl border border-line/70 bg-panel2/70 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="truncate text-sm font-semibold text-text">{risk.risk_type}</div>
-                      <Badge
-                        tone={
-                          risk.severity === "High" ? "danger" : risk.severity === "Medium" ? "warning" : "success"
-                        }
-                      >
-                        {risk.severity}
-                      </Badge>
-                    </div>
-                    <div className="mt-2 text-xs font-medium text-muted">{risk.wbs_code}</div>
-                    <div className="mt-1 text-sm text-muted">{risk.risk_description}</div>
-                  </div>
-                ))}
-                {!risks.length ? (
-                  <div className="py-6 text-center text-sm text-muted sm:col-span-2">No open risks found.</div>
-                ) : null}
-              </div>
-            </div>
-            )}
-          </div>
-          )}
+          <DashboardGrid items={summaryItems} editing={editingLayout} onReorder={applySummaryReorder} />
         </div>
       ) : (
         <TrendAnalysisPanel
@@ -647,6 +659,8 @@ export function DashboardClientWorkspace({
           setSelectedPos={setSelectedPos}
           poOptions={poOptions}
           dashboardLayout={dashboardLayout}
+          canCustomize={canCustomize}
+          trendsOrder={trendsOrder}
         />
       )}
     </div>

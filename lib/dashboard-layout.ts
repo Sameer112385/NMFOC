@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import type { DashboardLayout, WidgetStatus } from '@/lib/dashboard-widgets';
-import { DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
+import type { DashboardLayout, DashboardTab, WidgetStatus } from '@/lib/dashboard-widgets';
+import { DASHBOARD_WIDGETS, defaultOrder } from '@/lib/dashboard-widgets';
 
 // Global dashboard layout config, persisted server-side as a JSON file. Mirrors
 // lib/supabase/runtime-config.ts — the app's established pattern for global settings.
@@ -20,10 +20,57 @@ const configFile = path.join(configDir, 'dashboard-layout.json');
 const VALID_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
 const VALID_STATUSES: WidgetStatus[] = ['active', 'hidden', 'archived'];
 
+// Order is a SEPARATE axis from status: per scope, a per-tab ordered list of ids.
+// An empty/absent array for a tab means "use the registry default order".
+type TabOrder = Partial<Record<DashboardTab, string[]>>;
+
 type StoredLayout = {
   global: DashboardLayout;
   projects: Record<string, DashboardLayout>;
+  order: {
+    global: TabOrder;
+    projects: Record<string, TabOrder>;
+  };
 };
+
+function seqEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// Drop unknown/duplicate ids for the tab. Does NOT append — an empty result stays empty
+// so it can mean "no override".
+function sanitizeOrderForStore(raw: unknown, tab: DashboardTab): string[] {
+  if (!Array.isArray(raw)) return [];
+  const valid = new Set(DASHBOARD_WIDGETS.filter((w) => w.tab === tab).map((w) => w.id));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of raw) {
+    if (typeof id === 'string' && valid.has(id) && !seen.has(id)) {
+      out.push(id);
+      seen.add(id);
+    }
+  }
+  return out;
+}
+
+// A render-ready complete order: sanitized, with any registry ids missing from the saved
+// order appended at the end — so a widget added to the registry later never disappears.
+function completeOrder(raw: unknown, tab: DashboardTab): string[] {
+  const base = sanitizeOrderForStore(raw, tab);
+  const seen = new Set(base);
+  for (const id of defaultOrder(tab)) if (!seen.has(id)) base.push(id);
+  return base;
+}
+
+function sanitizeTabOrder(raw: unknown): TabOrder {
+  const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const out: TabOrder = {};
+  for (const tab of ['summary', 'trends'] as DashboardTab[]) {
+    const clean = sanitizeOrderForStore(obj[tab], tab);
+    if (clean.length) out[tab] = clean;
+  }
+  return out;
+}
 
 // Drop unknown ids and invalid statuses so a stale/hand-edited file can't break rendering.
 function sanitizeMap(raw: unknown): DashboardLayout {
@@ -37,13 +84,16 @@ function sanitizeMap(raw: unknown): DashboardLayout {
   return out;
 }
 
-// Accepts both the current nested shape and the original flat map (treated as global).
+const EMPTY_STORED: StoredLayout = { global: {}, projects: {}, order: { global: {}, projects: {} } };
+
+// Accepts the flat legacy map, the {global,projects} shape (no order), and the current
+// shape (with order). Missing order defaults to empty → legacy files load cleanly.
 function sanitizeStored(raw: unknown): StoredLayout {
-  if (!raw || typeof raw !== 'object') return { global: {}, projects: {} };
+  if (!raw || typeof raw !== 'object') return { global: {}, projects: {}, order: { global: {}, projects: {} } };
   const obj = raw as Record<string, unknown>;
-  const looksNested = 'global' in obj || 'projects' in obj;
+  const looksNested = 'global' in obj || 'projects' in obj || 'order' in obj;
   if (!looksNested) {
-    return { global: sanitizeMap(obj), projects: {} };
+    return { global: sanitizeMap(obj), projects: {}, order: { global: {}, projects: {} } };
   }
   const projectsRaw = (obj.projects ?? {}) as Record<string, unknown>;
   const projects: Record<string, DashboardLayout> = {};
@@ -51,7 +101,20 @@ function sanitizeStored(raw: unknown): StoredLayout {
     const clean = sanitizeMap(map);
     if (Object.keys(clean).length) projects[projectId] = clean;
   }
-  return { global: sanitizeMap(obj.global), projects };
+
+  const orderRaw = (obj.order ?? {}) as Record<string, unknown>;
+  const orderProjectsRaw = (orderRaw.projects ?? {}) as Record<string, unknown>;
+  const orderProjects: Record<string, TabOrder> = {};
+  for (const [projectId, tabOrder] of Object.entries(orderProjectsRaw)) {
+    const clean = sanitizeTabOrder(tabOrder);
+    if (Object.keys(clean).length) orderProjects[projectId] = clean;
+  }
+
+  return {
+    global: sanitizeMap(obj.global),
+    projects,
+    order: { global: sanitizeTabOrder(orderRaw.global), projects: orderProjects },
+  };
 }
 
 async function readStored(): Promise<StoredLayout> {
@@ -59,7 +122,7 @@ async function readStored(): Promise<StoredLayout> {
     const raw = await readFile(configFile, 'utf8');
     return sanitizeStored(JSON.parse(raw));
   } catch {
-    return { global: {}, projects: {} };
+    return { global: {}, projects: {}, order: { global: {}, projects: {} } };
   }
 }
 
@@ -90,10 +153,43 @@ export async function getProjectLayoutBundle(projectId: string): Promise<{
   global: DashboardLayout;
   project: DashboardLayout;
   effective: DashboardLayout;
+  order: {
+    global: Record<DashboardTab, string[]>;
+    project: TabOrder;
+    effective: Record<DashboardTab, string[]>;
+  };
 }> {
   const stored = await readStored();
   const project = stored.projects[projectId] ?? {};
-  return { global: stored.global, project, effective: { ...stored.global, ...project } };
+  const projectOrder = stored.order.projects[projectId] ?? {};
+  const resolve = (tab: DashboardTab): string[] => {
+    const proj = projectOrder[tab];
+    if (proj?.length) return completeOrder(proj, tab);
+    const glob = stored.order.global[tab];
+    if (glob?.length) return completeOrder(glob, tab);
+    return defaultOrder(tab);
+  };
+  return {
+    global: stored.global,
+    project,
+    effective: { ...stored.global, ...project },
+    order: {
+      global: { summary: completeOrder(stored.order.global.summary, 'summary'), trends: completeOrder(stored.order.global.trends, 'trends') },
+      project: projectOrder,
+      effective: { summary: resolve('summary'), trends: resolve('trends') },
+    },
+  };
+}
+
+// Effective render order for a tab: project override ?? global override ?? registry default,
+// always completed so newly-registered widgets appear.
+export async function getEffectiveOrder(projectId: string, tab: DashboardTab): Promise<string[]> {
+  const stored = await readStored();
+  const proj = stored.order.projects[projectId]?.[tab];
+  if (proj?.length) return completeOrder(proj, tab);
+  const glob = stored.order.global[tab];
+  if (glob?.length) return completeOrder(glob, tab);
+  return defaultOrder(tab);
 }
 
 // --- Writes ---
@@ -118,4 +214,45 @@ export async function saveProjectDashboardLayout(
   }
   await writeStored(stored);
   return clean;
+}
+
+// --- Order writes ---
+
+export async function saveGlobalOrder(tab: DashboardTab, ids: string[]): Promise<string[]> {
+  const stored = await readStored();
+  const clean = sanitizeOrderForStore(ids, tab);
+  // If the saved order matches the registry default, store nothing (no override).
+  if (!clean.length || seqEqual(completeOrder(clean, tab), defaultOrder(tab))) {
+    delete stored.order.global[tab];
+  } else {
+    stored.order.global[tab] = clean;
+  }
+  await writeStored(stored);
+  return completeOrder(stored.order.global[tab], tab);
+}
+
+export async function saveProjectOrder(
+  projectId: string,
+  tab: DashboardTab,
+  ids: string[],
+): Promise<string[]> {
+  const stored = await readStored();
+  const clean = sanitizeOrderForStore(ids, tab);
+  // Effective order without this project's override (global override ?? default).
+  const globalBase = stored.order.global[tab]?.length ? stored.order.global[tab]! : defaultOrder(tab);
+  const effectiveGlobal = completeOrder(globalBase, tab);
+
+  const projectOrder = stored.order.projects[projectId] ?? {};
+  if (!clean.length || seqEqual(completeOrder(clean, tab), effectiveGlobal)) {
+    delete projectOrder[tab]; // redundant with global/default => drop the override
+  } else {
+    projectOrder[tab] = clean;
+  }
+  if (Object.keys(projectOrder).length) {
+    stored.order.projects[projectId] = projectOrder;
+  } else {
+    delete stored.order.projects[projectId];
+  }
+  await writeStored(stored);
+  return getEffectiveOrder(projectId, tab);
 }

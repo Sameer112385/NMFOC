@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getProjectLayoutBundle, saveProjectDashboardLayout } from '@/lib/dashboard-layout';
+import { getProjectLayoutBundle, saveProjectDashboardLayout, saveProjectOrder } from '@/lib/dashboard-layout';
 import { getCurrentAppUser, canManageDashboardLayout } from '@/lib/current-user';
-import type { DashboardLayout } from '@/lib/dashboard-widgets';
+import type { DashboardLayout, DashboardTab } from '@/lib/dashboard-widgets';
 
-// Per-project layout overrides. GET returns the global base, the project's explicit
-// override, and the resulting effective layout. POST replaces the project's override map.
+// Per-project overrides. GET returns global/project/effective for both status and order.
+// POST accepts `layout` (status map) and/or `order` (ordered ids for a tab) — different axes.
 
 export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -19,7 +19,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   }
 
   const { projectId } = await params;
-  const payload = (await request.json().catch(() => ({}))) as { layout?: DashboardLayout };
-  const saved = await saveProjectDashboardLayout(projectId, payload.layout ?? {});
-  return NextResponse.json({ ok: true, layout: saved });
+  const payload = (await request.json().catch(() => ({}))) as {
+    layout?: DashboardLayout;
+    order?: string[];
+    tab?: DashboardTab;
+  };
+
+  const result: { ok: true; layout?: DashboardLayout; order?: string[] } = { ok: true };
+  if (payload.layout) {
+    result.layout = await saveProjectDashboardLayout(projectId, payload.layout);
+  }
+  if (payload.order && (payload.tab === 'summary' || payload.tab === 'trends')) {
+    result.order = await saveProjectOrder(projectId, payload.tab, payload.order);
+  }
+  return NextResponse.json(result);
 }

@@ -8,6 +8,9 @@
 export type DashboardTab = 'summary' | 'trends';
 export type WidgetStatus = 'active' | 'hidden' | 'archived';
 
+// Column span out of a 12-col grid — drives width in the reorderable dashboard grid.
+export type WidgetSpan = 2 | 4 | 6 | 12;
+
 // id -> status override. Absent id means "use the default" (active).
 export type DashboardLayout = Record<string, WidgetStatus>;
 
@@ -16,49 +19,70 @@ export type DashboardWidget = {
   tab: DashboardTab;
   group: string; // grouping label for the Settings panel
   title: string; // human-readable label
+  span: WidgetSpan; // native width in the 12-col dashboard grid
 };
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
-  // --- Financial Summary · Stat cards ---
-  { id: 'summary.card.plannedCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Cost' },
-  { id: 'summary.card.mgmtActualCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Management Actual Cost' },
-  { id: 'summary.card.plannedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Revenue' },
-  { id: 'summary.card.recognizedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Recognized Revenue' },
-  { id: 'summary.card.forecastMargin', tab: 'summary', group: 'Summary · Stat cards', title: 'Forecast Margin' },
-  { id: 'summary.card.pocPercent', tab: 'summary', group: 'Summary · Stat cards', title: 'POC %' },
+  // --- Financial Summary · Stat cards (narrow: 2/12) ---
+  { id: 'summary.card.plannedCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Cost', span: 2 },
+  { id: 'summary.card.mgmtActualCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Management Actual Cost', span: 2 },
+  { id: 'summary.card.plannedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Revenue', span: 2 },
+  { id: 'summary.card.recognizedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Recognized Revenue', span: 2 },
+  { id: 'summary.card.forecastMargin', tab: 'summary', group: 'Summary · Stat cards', title: 'Forecast Margin', span: 2 },
+  { id: 'summary.card.pocPercent', tab: 'summary', group: 'Summary · Stat cards', title: 'POC %', span: 2 },
 
   // --- Financial Summary · Panels ---
-  { id: 'summary.panel.sapView', tab: 'summary', group: 'Summary · Panels', title: 'SAP View' },
-  { id: 'summary.panel.managementView', tab: 'summary', group: 'Summary · Panels', title: 'Management View' },
-  { id: 'summary.panel.projectToDate', tab: 'summary', group: 'Summary · Panels', title: 'Project-to-Date' },
-  { id: 'summary.panel.ytdPerformance', tab: 'summary', group: 'Summary · Panels', title: 'YTD Performance' },
-  { id: 'summary.panel.periodRollups', tab: 'summary', group: 'Summary · Panels', title: 'Period Rollups' },
+  { id: 'summary.panel.sapView', tab: 'summary', group: 'Summary · Panels', title: 'SAP View', span: 6 },
+  { id: 'summary.panel.managementView', tab: 'summary', group: 'Summary · Panels', title: 'Management View', span: 6 },
+  { id: 'summary.panel.projectToDate', tab: 'summary', group: 'Summary · Panels', title: 'Project-to-Date', span: 4 },
+  { id: 'summary.panel.ytdPerformance', tab: 'summary', group: 'Summary · Panels', title: 'YTD Performance', span: 4 },
+  { id: 'summary.panel.periodRollups', tab: 'summary', group: 'Summary · Panels', title: 'Period Rollups', span: 4 },
 
-  // --- Financial Summary · Charts ---
-  { id: 'summary.chart.revenueTrend', tab: 'summary', group: 'Summary · Charts', title: 'Revenue Trend' },
-  { id: 'summary.chart.revenueSplit', tab: 'summary', group: 'Summary · Charts', title: 'Revenue Split' },
-  { id: 'summary.chart.pocByWbs', tab: 'summary', group: 'Summary · Charts', title: 'POC by WBS' },
-  { id: 'summary.chart.revenueVsSimulation', tab: 'summary', group: 'Summary · Charts', title: 'Revenue vs Simulation' },
-  { id: 'summary.chart.costComparison', tab: 'summary', group: 'Summary · Charts', title: 'Cost Comparison' },
-  { id: 'summary.chart.topWbs', tab: 'summary', group: 'Summary · Charts', title: 'Top WBS by Revenue' },
+  // --- Financial Summary · Charts (half: 6/12) ---
+  { id: 'summary.chart.revenueTrend', tab: 'summary', group: 'Summary · Charts', title: 'Revenue Trend', span: 6 },
+  { id: 'summary.chart.revenueSplit', tab: 'summary', group: 'Summary · Charts', title: 'Revenue Split', span: 6 },
+  { id: 'summary.chart.pocByWbs', tab: 'summary', group: 'Summary · Charts', title: 'POC by WBS', span: 6 },
+  { id: 'summary.chart.revenueVsSimulation', tab: 'summary', group: 'Summary · Charts', title: 'Revenue vs Simulation', span: 6 },
+  { id: 'summary.chart.costComparison', tab: 'summary', group: 'Summary · Charts', title: 'Cost Comparison', span: 6 },
+  { id: 'summary.chart.topWbs', tab: 'summary', group: 'Summary · Charts', title: 'Top WBS by Revenue', span: 6 },
 
   // --- Financial Summary · Tables & detail panels ---
-  { id: 'summary.table.wbsFinancialAnalysis', tab: 'summary', group: 'Summary · Tables & details', title: 'WBS Financial Analysis' },
-  { id: 'summary.panel.projectDetails', tab: 'summary', group: 'Summary · Tables & details', title: 'Project Details' },
-  { id: 'summary.panel.pendingForPosting', tab: 'summary', group: 'Summary · Tables & details', title: 'Pending for Posting' },
-  { id: 'summary.panel.topRiskExposure', tab: 'summary', group: 'Summary · Tables & details', title: 'Top Risk Exposure' },
+  { id: 'summary.table.wbsFinancialAnalysis', tab: 'summary', group: 'Summary · Tables & details', title: 'WBS Financial Analysis', span: 12 },
+  { id: 'summary.panel.projectDetails', tab: 'summary', group: 'Summary · Tables & details', title: 'Project Details', span: 6 },
+  { id: 'summary.panel.pendingForPosting', tab: 'summary', group: 'Summary · Tables & details', title: 'Pending for Posting', span: 6 },
+  { id: 'summary.panel.topRiskExposure', tab: 'summary', group: 'Summary · Tables & details', title: 'Top Risk Exposure', span: 12 },
 
   // --- Trend Analysis ---
-  { id: 'trends.kpis', tab: 'trends', group: 'Trends · KPIs', title: 'KPI Summary Cards' },
-  { id: 'trends.chart.costTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Cost Trend' },
-  { id: 'trends.chart.revenueTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Revenue Trend' },
-  { id: 'trends.chart.costVsRevenueGrowth', tab: 'trends', group: 'Trends · Charts', title: 'Cost vs Revenue Growth' },
-  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Trends · Charts', title: 'Forecast Trend' },
-  { id: 'trends.section.costElementAnalysis', tab: 'trends', group: 'Trends · Sections', title: 'Cost Element Analysis' },
-  { id: 'trends.section.subcontractorPo', tab: 'trends', group: 'Trends · Sections', title: 'Subcontractor Performance (PO)' },
-  { id: 'trends.section.revenueByWbsMatrix', tab: 'trends', group: 'Trends · Sections', title: 'Revenue by WBS & Period' },
-  { id: 'trends.section.drilldown', tab: 'trends', group: 'Trends · Sections', title: 'Transaction Drill-down' },
+  { id: 'trends.kpis', tab: 'trends', group: 'Trends · KPIs', title: 'KPI Summary Cards', span: 12 },
+  { id: 'trends.chart.costTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Cost Trend', span: 6 },
+  { id: 'trends.chart.revenueTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Revenue Trend', span: 6 },
+  { id: 'trends.chart.costVsRevenueGrowth', tab: 'trends', group: 'Trends · Charts', title: 'Cost vs Revenue Growth', span: 6 },
+  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Trends · Charts', title: 'Forecast Trend', span: 6 },
+  { id: 'trends.section.costElementAnalysis', tab: 'trends', group: 'Trends · Sections', title: 'Cost Element Analysis', span: 12 },
+  { id: 'trends.section.subcontractorPo', tab: 'trends', group: 'Trends · Sections', title: 'Subcontractor Performance (PO)', span: 12 },
+  { id: 'trends.section.revenueByWbsMatrix', tab: 'trends', group: 'Trends · Sections', title: 'Revenue by WBS & Period', span: 12 },
+  { id: 'trends.section.drilldown', tab: 'trends', group: 'Trends · Sections', title: 'Transaction Drill-down', span: 12 },
 ];
+
+// The registry-default order for a tab. The array above is already in the current visual
+// order, so this equals today's layout exactly.
+export function defaultOrder(tab: DashboardTab): string[] {
+  return DASHBOARD_WIDGETS.filter((w) => w.tab === tab).map((w) => w.id);
+}
+
+const WIDGET_BY_ID = new Map(DASHBOARD_WIDGETS.map((w) => [w.id, w] as const));
+export function getWidget(id: string): DashboardWidget | undefined {
+  return WIDGET_BY_ID.get(id);
+}
+
+// Static Tailwind classes per span (never build col-span-${n} at runtime — Tailwind purges it).
+// Cards halve on mobile, everything else stacks full-width; spans honored at md+.
+export const SPAN_CLASS: Record<WidgetSpan, string> = {
+  2: 'col-span-6 md:col-span-2',
+  4: 'col-span-12 md:col-span-4',
+  6: 'col-span-12 md:col-span-6',
+  12: 'col-span-12',
+};
 
 // Fail-safe: only an explicit hidden/archived override hides a widget. Unknown or absent
 // ids (including a typo'd gate) resolve to visible, so gating can never accidentally hide.
