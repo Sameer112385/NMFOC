@@ -24,7 +24,7 @@ export default async function SettingsPage() {
 
   return (
     <PageShell title="Settings" subtitle="Branding configuration, environment checks, role notes, and user profiles.">
-      <div className="mx-auto flex max-w-4xl flex-col gap-3">
+      <div className="flex w-full flex-col gap-3">
         {canManageLayout ? (
           <SettingsSection
             icon="dashboard"

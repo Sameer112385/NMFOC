@@ -3,7 +3,6 @@
 import { useState, useMemo } from "react";
 import { Badge, StatRow } from "@/components/ui";
 import { DashboardWbsFilter } from "@/components/dashboard-wbs-filter";
-import { ProjectMasterAdminPanel } from "@/components/project-master-admin-panel";
 import { buildRiskAlerts } from "@/lib/calculations";
 import { clampPercent, formatCurrency, formatPercent } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -633,15 +632,6 @@ export function DashboardClientWorkspace({
             )}
           </div>
           )}
-
-          <ProjectMasterAdminPanel
-            projectId={project.id}
-            projectName={project.project_name}
-            revenueWbs={revenueRows}
-            projectWbsMaster={projectWbsMaster}
-            manpowerRates={manpowerRates}
-            materialMasters={materialMasters}
-          />
         </div>
       ) : (
         <TrendAnalysisPanel
