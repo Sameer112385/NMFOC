@@ -7,15 +7,6 @@ import { Badge, surfaceCard } from '@/components/ui';
 import { DarkSelect } from '@/components/dark-select';
 import { MultiWbsSelect } from '@/components/multi-wbs-select';
 import { formatCurrency, formatPercent } from '@/lib/utils';
-import {
-  CostComparisonChart,
-  PendingChart,
-  PocChart,
-  RevenueSplitChart,
-  RevenueVsSimulationChart,
-  ScrollableTopWbsChart,
-  TopWbsChart,
-} from '@/components/charts';
 
 type RevenueRow = {
   project_id: string;
@@ -560,16 +551,8 @@ export function DashboardWbsFilter({
           </table>
         </div>
       </div>
-
-      {sortedRows.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <RevenueSplitChart recognized={totals.recognizedRevenue} remaining={Math.max(0, totals.remainingRevenue)} total={totals.plannedRevenue} />
-          <PocChart data={sortedRows.map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.poc_percent }))} />
-          <RevenueVsSimulationChart data={sortedRows.map((row) => ({ name: row.wbs_description || row.wbs_code, sap: row.sap_earned_revenue ?? 0, simulated: row.recognized_revenue_to_date }))} />
-          <CostComparisonChart data={sortedRows.map((row) => ({ name: row.wbs_description || row.wbs_code, sap: row.sap_actual_cost ?? 0, simulated: row.actual_cost_to_date }))} />
-          <TopWbsChart data={sortedRows.slice().sort((a, b) => b.recognized_revenue_to_date - a.recognized_revenue_to_date).slice(0, 6).map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.recognized_revenue_to_date }))} />
-        </div>
-      )}
+      {/* Charts removed — they are rendered once as standalone summary widgets (Recognized
+          vs Remaining, POC % by WBS, Revenue vs Simulation, Cost Comparison, Top Links). */}
     </div>
   );
 }

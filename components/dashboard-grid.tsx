@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -24,7 +24,27 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { SPAN_CLASS, type WidgetSpan } from "@/lib/dashboard-widgets";
+import { type WidgetSpan } from "@/lib/dashboard-widgets";
+
+// Flexbox sizing per span. Items GROW to fill their row, so hiding a widget makes its
+// neighbours expand instead of leaving a gap (`flexGrow: 1`). `flexBasis` sets the natural
+// width and `minWidth` the wrap point (responsive: they stack on narrow screens). Small
+// cards get a `maxWidth` cap so a lone card doesn't stretch to full width.
+function spanStyle(span: WidgetSpan): CSSProperties {
+  if (span === 12) return { flexBasis: "100%", flexGrow: 1, flexShrink: 1, minWidth: 0 };
+  const cfg = {
+    2: { basis: 190, min: 150, max: 360 },
+    4: { basis: 300, min: 260, max: 9999 },
+    6: { basis: 420, min: 300, max: 9999 },
+  }[span];
+  return {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: `${cfg.basis}px`,
+    minWidth: `${cfg.min}px`,
+    maxWidth: cfg.max === 9999 ? undefined : `${cfg.max}px`,
+  };
+}
 
 export type GridItem = {
   id: string;
@@ -56,9 +76,9 @@ export function DashboardGrid({
 
   if (!editing) {
     return (
-      <div className="grid grid-cols-12 gap-4">
+      <div className="flex flex-wrap items-stretch gap-4">
         {items.map((it) => (
-          <div key={it.id} className={SPAN_CLASS[it.span]}>
+          <div key={it.id} style={spanStyle(it.span)}>
             {it.node}
           </div>
         ))}
@@ -90,7 +110,7 @@ export function DashboardGrid({
       onDragCancel={() => setActiveId(null)}
     >
       <SortableContext items={ids} strategy={rectSortingStrategy}>
-        <div className="grid grid-cols-12 gap-4">
+        <div className="flex flex-wrap items-stretch gap-4">
           {items.map((it) => (
             <SortableCell key={it.id} id={it.id} span={it.span} dimmed={activeId === it.id}>
               {it.placeholder ?? it.node}
@@ -124,8 +144,8 @@ function SortableCell({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(SPAN_CLASS[span], "relative", (isDragging || dimmed) && "opacity-40")}
+      style={{ ...spanStyle(span), transform: CSS.Transform.toString(transform), transition }}
+      className={cn("relative", (isDragging || dimmed) && "opacity-40")}
     >
       {/* Drag handle — listeners live here only, so interactive widget content isn't hijacked. */}
       <button
