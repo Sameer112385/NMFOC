@@ -26,24 +26,14 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { type WidgetSpan } from "@/lib/dashboard-widgets";
 
-// Flexbox sizing per span. Items GROW to fill their row, so hiding a widget makes its
-// neighbours expand instead of leaving a gap (`flexGrow: 1`). `flexBasis` sets the natural
-// width and `minWidth` the wrap point (responsive: they stack on narrow screens). Small
-// cards get a `maxWidth` cap so a lone card doesn't stretch to full width.
+// Flexbox sizing per span. Items GROW to fill their row and divide the width evenly
+// (`flexGrow: 1`, equal basis within a section), so 1 item → full width, 2 → 50% each,
+// 3 → thirds, and hiding one makes the rest expand — no gaps. `flexBasis`/`minWidth` set the
+// responsive wrap point (items stack on narrow screens). span 12 always takes its own row.
 function spanStyle(span: WidgetSpan): CSSProperties {
   if (span === 12) return { flexBasis: "100%", flexGrow: 1, flexShrink: 1, minWidth: 0 };
-  const cfg = {
-    2: { basis: 190, min: 150, max: 360 },
-    4: { basis: 300, min: 260, max: 9999 },
-    6: { basis: 420, min: 300, max: 9999 },
-  }[span];
-  return {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: `${cfg.basis}px`,
-    minWidth: `${cfg.min}px`,
-    maxWidth: cfg.max === 9999 ? undefined : `${cfg.max}px`,
-  };
+  const cfg = { 2: { basis: 180, min: 150 }, 4: { basis: 280, min: 240 }, 6: { basis: 360, min: 300 } }[span];
+  return { flexGrow: 1, flexShrink: 1, flexBasis: `${cfg.basis}px`, minWidth: `${cfg.min}px` };
 }
 
 export type GridItem = {

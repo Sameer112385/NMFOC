@@ -496,17 +496,31 @@ export function DashboardClientWorkspace({
       return { id, span: w.span, title: w.title, node: renderSummaryWidget(id), placeholder: isHeavySummary(id) ? summaryPlaceholder(id) : undefined };
     });
 
+  // Partition visible items into sections (by registry `group`), preserving order. Each
+  // section renders in its own grid so, e.g., stat cards never share a row with panels.
+  const summarySections = useMemo(() => {
+    const map = new Map<string, GridItem[]>();
+    for (const it of summaryItems) {
+      const g = getWidget(it.id)?.group ?? "Other";
+      const list = map.get(g) ?? [];
+      list.push(it);
+      map.set(g, list);
+    }
+    return Array.from(map.entries()); // [groupLabel, items][] in first-seen (registry) order
+  }, [summaryItems]);
+
   const startEditLayout = () => {
     setLayoutMsg("");
     setEditOrder(summaryOrder.length ? [...summaryOrder] : summaryItems.map((it) => it.id));
     setEditingLayout(true);
     setCustomizing(false);
   };
-  const applySummaryReorder = (visibleIds: string[]) => {
+  // Reorder within a single section: replace that section's visible slots in the full order.
+  const applySectionReorder = (group: string, visibleIds: string[]) => {
     setEditOrder((full) => {
-      const visible = new Set(full.filter((id) => getWidget(id)?.tab === "summary" && isSummaryVisible(id)));
+      const inGroup = new Set(full.filter((id) => getWidget(id)?.group === group && isSummaryVisible(id)));
       let i = 0;
-      return full.map((id) => (visible.has(id) ? visibleIds[i++]! : id));
+      return full.map((id) => (inGroup.has(id) ? visibleIds[i++]! : id));
     });
   };
   const saveLayout = async () => {
@@ -643,7 +657,16 @@ export function DashboardClientWorkspace({
             </div>
           ) : null}
 
-          <DashboardGrid items={summaryItems} editing={editingLayout} onReorder={applySummaryReorder} />
+          <div className="space-y-6">
+            {summarySections.map(([group, items]) => (
+              <DashboardGrid
+                key={group}
+                items={items}
+                editing={editingLayout}
+                onReorder={(ids) => applySectionReorder(group, ids)}
+              />
+            ))}
+          </div>
         </div>
       ) : (
         <TrendAnalysisPanel
