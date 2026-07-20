@@ -83,13 +83,13 @@ function StatCard({
   }[group.toLowerCase()] : null;
 
   return (
-    <div className={`relative overflow-hidden rounded-3xl border p-4 shadow-card ${toneClasses}`}>
+    <div className={`relative flex h-full flex-col overflow-hidden rounded-3xl border p-4 shadow-card ${toneClasses}`}>
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent ${borderGradient} to-transparent opacity-65`} />
       <div className="flex items-center justify-between gap-2">
         <span className="section-kicker text-muted">{title}</span>
         {groupBadge || <Icon className={`h-4.5 w-4.5 ${iconColor}`} />}
       </div>
-      <div className="data-value mt-4 text-[1.18rem] font-semibold tracking-tight text-text sm:text-[1.3rem]">
+      <div className="data-value mt-4 grow text-[1.18rem] font-semibold tracking-tight text-text sm:text-[1.3rem]">
         {value}
       </div>
       {hint ? <div className="mt-3 text-xs text-muted/80">{hint}</div> : null}
@@ -112,8 +112,8 @@ interface DashboardClientWorkspaceProps {
   historicalRevenueRows?: HistoricalRevenueRow[];
   dashboardLayout?: DashboardLayout;
   canCustomize?: boolean;
-  summaryOrder?: string[];
-  trendsOrder?: string[];
+  summaryOrder?: string[][];
+  trendsOrder?: string[][];
 }
 
 export function DashboardClientWorkspace({
@@ -136,11 +136,13 @@ export function DashboardClientWorkspace({
 }: DashboardClientWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
   const [customizing, setCustomizing] = useState(false);
-  // Layout edit mode (drag to reorder the Summary tab). editOrder is the full summary order.
+  // Layout edit mode (drag to reorder). editRows is the row-based order.
   const [editingLayout, setEditingLayout] = useState(false);
-  const [editOrder, setEditOrder] = useState<string[]>([]);
+  const [editRows, setEditRows] = useState<string[][]>([]);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutMsg, setLayoutMsg] = useState("");
+  // Trends tab edit mode — state lives here so the tab-bar button can trigger it.
+  const [editingTrends, setEditingTrends] = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [selectedPos, setSelectedPos] = useState<string[]>([]);
 
@@ -488,40 +490,31 @@ export function DashboardClientWorkspace({
     );
   };
 
-  const summaryRenderOrder = editingLayout ? editOrder : summaryOrder;
-  const summaryItems: GridItem[] = summaryRenderOrder
-    .filter((id) => getWidget(id)?.tab === "summary" && isSummaryVisible(id))
-    .map((id) => {
-      const w = getWidget(id)!;
-      return { id, span: w.span, title: w.title, node: renderSummaryWidget(id), placeholder: isHeavySummary(id) ? summaryPlaceholder(id) : undefined };
-    });
+  // Build a GridItem for a widget id (returns null if not visible).
+  const buildGridItem = (id: string): GridItem | null => {
+    const w = getWidget(id);
+    if (!w || w.tab !== "summary" || !isSummaryVisible(id)) return null;
+    return { id, span: w.span, title: w.title, node: renderSummaryWidget(id), placeholder: isHeavySummary(id) ? summaryPlaceholder(id) : undefined };
+  };
 
-  // Partition visible items into sections (by registry `group`), preserving order. Each
-  // section renders in its own grid so, e.g., stat cards never share a row with panels.
-  const summarySections = useMemo(() => {
-    const map = new Map<string, GridItem[]>();
-    for (const it of summaryItems) {
-      const g = getWidget(it.id)?.group ?? "Other";
-      const list = map.get(g) ?? [];
-      list.push(it);
-      map.set(g, list);
-    }
-    return Array.from(map.entries()); // [groupLabel, items][] in first-seen (registry) order
-  }, [summaryItems]);
+  // Row-based layout: each row is a separate flex container.
+  const currentRowOrder = editingLayout ? editRows : summaryOrder;
+  const summaryRowItems: GridItem[][] = currentRowOrder
+    .map((rowIds) => rowIds.map(buildGridItem).filter(Boolean) as GridItem[])
+    .filter((row) => row.length > 0);
 
   const startEditLayout = () => {
-    setLayoutMsg("");
-    setEditOrder(summaryOrder.length ? [...summaryOrder] : summaryItems.map((it) => it.id));
-    setEditingLayout(true);
     setCustomizing(false);
+    if (activeTab === "summary") {
+      setLayoutMsg("");
+      setEditRows(summaryOrder.map((row) => [...row]));
+      setEditingLayout(true);
+    } else {
+      setEditingTrends(true);
+    }
   };
-  // Reorder within a single section: replace that section's visible slots in the full order.
-  const applySectionReorder = (group: string, visibleIds: string[]) => {
-    setEditOrder((full) => {
-      const inGroup = new Set(full.filter((id) => getWidget(id)?.group === group && isSummaryVisible(id)));
-      let i = 0;
-      return full.map((id) => (inGroup.has(id) ? visibleIds[i++]! : id));
-    });
+  const applySummaryReorder = (newRows: string[][]) => {
+    setEditRows(newRows);
   };
   const saveLayout = async () => {
     setSavingLayout(true);
@@ -530,7 +523,7 @@ export function DashboardClientWorkspace({
       const res = await fetch(`/api/dashboard-layout/${project.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: editOrder, tab: "summary" }),
+        body: JSON.stringify({ order: editRows, tab: "summary" }),
       });
       if (!res.ok) throw new Error();
       window.location.reload();
@@ -565,18 +558,16 @@ export function DashboardClientWorkspace({
               Trend Analysis
             </button>
           </div>
-          {canCustomize && !editingLayout ? (
+          {canCustomize && !editingLayout && !editingTrends ? (
             <div className="flex items-center gap-1">
-              {activeTab === "summary" ? (
-                <button
-                  onClick={startEditLayout}
-                  title="Drag to rearrange the Summary visuals"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-muted transition-all duration-100 hover:bg-panel2 hover:text-text"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  Edit layout
-                </button>
-              ) : null}
+              <button
+                onClick={startEditLayout}
+                title={`Drag to rearrange the ${activeTab === "summary" ? "Summary" : "Trend"} visuals`}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-muted transition-all duration-100 hover:bg-panel2 hover:text-text"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Edit layout
+              </button>
               <button
                 onClick={() => setCustomizing((c) => !c)}
                 title="Show or hide visuals for this project"
@@ -657,16 +648,11 @@ export function DashboardClientWorkspace({
             </div>
           ) : null}
 
-          <div className="space-y-6">
-            {summarySections.map(([group, items]) => (
-              <DashboardGrid
-                key={group}
-                items={items}
-                editing={editingLayout}
-                onReorder={(ids) => applySectionReorder(group, ids)}
-              />
-            ))}
-          </div>
+          <DashboardGrid
+            rows={summaryRowItems}
+            editing={editingLayout}
+            onReorder={applySummaryReorder}
+          />
         </div>
       ) : (
         <TrendAnalysisPanel
@@ -684,6 +670,8 @@ export function DashboardClientWorkspace({
           dashboardLayout={dashboardLayout}
           canCustomize={canCustomize}
           trendsOrder={trendsOrder}
+          editingLayout={editingTrends}
+          setEditingLayout={setEditingTrends}
         />
       )}
     </div>

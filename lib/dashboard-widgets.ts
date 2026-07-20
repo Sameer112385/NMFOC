@@ -64,10 +64,60 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'trends.section.drilldown', tab: 'trends', group: 'Trends · Sections', title: 'Transaction Drill-down', span: 12 },
 ];
 
-// The registry-default order for a tab. The array above is already in the current visual
-// order, so this equals today's layout exactly.
+// The registry-default order for a tab (flat). Kept for backward compat with sanitize logic.
 export function defaultOrder(tab: DashboardTab): string[] {
   return DASHBOARD_WIDGETS.filter((w) => w.tab === tab).map((w) => w.id);
+}
+
+// Default row-based layout for a tab. Each inner array is a fixed row.
+export function defaultRowLayout(tab: DashboardTab): string[][] {
+  if (tab === 'summary') {
+    return [
+      ['summary.card.plannedCost', 'summary.card.mgmtActualCost', 'summary.card.plannedRevenue', 'summary.card.recognizedRevenue', 'summary.card.forecastMargin', 'summary.card.pocPercent'],
+      ['summary.panel.sapView', 'summary.panel.managementView'],
+      ['summary.panel.projectToDate', 'summary.panel.ytdPerformance', 'summary.panel.periodRollups'],
+      ['summary.chart.revenueTrend', 'summary.chart.revenueSplit'],
+      ['summary.chart.pocByWbs', 'summary.chart.revenueVsSimulation'],
+      ['summary.chart.costComparison', 'summary.chart.topWbs'],
+      ['summary.table.wbsFinancialAnalysis'],
+      ['summary.panel.projectDetails', 'summary.panel.pendingForPosting'],
+      ['summary.panel.topRiskExposure'],
+    ];
+  }
+  if (tab === 'trends') {
+    return [
+      ['trends.kpis'],
+      ['trends.chart.costTrend', 'trends.chart.revenueTrend'],
+      ['trends.chart.costVsRevenueGrowth', 'trends.chart.forecastTrend'],
+      ['trends.section.costElementAnalysis'],
+      ['trends.section.subcontractorPo'],
+      ['trends.section.revenueByWbsMatrix'],
+      ['trends.section.drilldown'],
+    ];
+  }
+  return [];
+}
+
+// Convert a flat id array to a row layout using group boundaries from the registry.
+export function flatOrderToRows(ids: string[]): string[][] {
+  if (!ids.length) return [];
+  const rows: string[][] = [];
+  let currentGroup: string | null = null;
+  let currentRow: string[] = [];
+  for (const id of ids) {
+    const w = getWidget(id);
+    if (!w) continue;
+    const group = w.group;
+    if (group !== currentGroup) {
+      if (currentRow.length) rows.push(currentRow);
+      currentRow = [id];
+      currentGroup = group;
+    } else {
+      currentRow.push(id);
+    }
+  }
+  if (currentRow.length) rows.push(currentRow);
+  return rows;
 }
 
 const WIDGET_BY_ID = new Map(DASHBOARD_WIDGETS.map((w) => [w.id, w] as const));

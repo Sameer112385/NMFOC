@@ -13,7 +13,7 @@ import {
   getGr55Summaries,
   getHistoricalRevenueRows,
 } from '@/lib/data';
-import { getEffectiveDashboardLayout, getEffectiveOrder } from '@/lib/dashboard-layout';
+import { getEffectiveDashboardLayout, getEffectiveRowOrder } from '@/lib/dashboard-layout';
 import { getCurrentAppUser, canManageDashboardLayout } from '@/lib/current-user';
 import { DashboardClientWorkspace } from '@/components/dashboard-client-workspace';
 
@@ -49,8 +49,8 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
 
   const dashboardLayout = await getEffectiveDashboardLayout(projectId);
   const [summaryOrder, trendsOrder] = await Promise.all([
-    getEffectiveOrder(projectId, 'summary'),
-    getEffectiveOrder(projectId, 'trends'),
+    getEffectiveRowOrder(projectId, 'summary'),
+    getEffectiveRowOrder(projectId, 'trends'),
   ]);
   const currentUser = await getCurrentAppUser();
   const canCustomize = canManageDashboardLayout(currentUser?.role);
