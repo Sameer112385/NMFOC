@@ -1,9 +1,46 @@
 {
-  "global": {},
+  "global": {
+    "summary.card.forecastMargin": "hidden",
+    "summary.panel.projectToDate": "hidden",
+    "summary.panel.periodRollups": "hidden",
+    "summary.chart.revenueVsSimulation": "hidden",
+    "summary.chart.costComparison": "hidden",
+    "summary.panel.topRiskExposure": "hidden"
+  },
   "projects": {
     "fa8d7d22-2e29-4abc-8739-881ba4370924": {
       "summary.panel.projectToDate": "hidden",
       "summary.panel.periodRollups": "hidden"
+    }
+  },
+  "order": {
+    "global": {},
+    "projects": {
+      "fa8d7d22-2e29-4abc-8739-881ba4370924": {
+        "summary": [
+          "summary.card.plannedCost",
+          "summary.card.mgmtActualCost",
+          "summary.card.plannedRevenue",
+          "summary.card.recognizedRevenue",
+          "summary.card.forecastMargin",
+          "summary.card.pocPercent",
+          "summary.panel.projectDetails",
+          "summary.panel.sapView",
+          "summary.panel.projectToDate",
+          "summary.panel.managementView",
+          "summary.panel.periodRollups",
+          "summary.panel.pendingForPosting",
+          "summary.panel.ytdPerformance",
+          "summary.chart.revenueSplit",
+          "summary.chart.revenueVsSimulation",
+          "summary.chart.costComparison",
+          "summary.chart.pocByWbs",
+          "summary.chart.revenueTrend",
+          "summary.chart.topWbs",
+          "summary.table.wbsFinancialAnalysis",
+          "summary.panel.topRiskExposure"
+        ]
+      }
     }
   }
 }
