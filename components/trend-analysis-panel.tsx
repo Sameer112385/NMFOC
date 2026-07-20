@@ -129,6 +129,8 @@ interface TrendAnalysisPanelProps {
   dashboardLayout?: DashboardLayout;
   canCustomize?: boolean;
   trendsOrder?: string[][];
+  editingLayout?: boolean;
+  setEditingLayout?: (v: boolean) => void;
 }
 
 // ---- Per-column (period) value filter, Excel-autofilter style ----
@@ -436,6 +438,8 @@ export function TrendAnalysisPanel({
   dashboardLayout,
   canCustomize = false,
   trendsOrder = [],
+  editingLayout: editingTrends = false,
+  setEditingLayout: setEditingTrends,
 }: TrendAnalysisPanelProps) {
   // Visibility gate. Fail-safe: only an explicit hidden/archived override removes a visual.
   const show = (id: string) => !isWidgetHidden(dashboardLayout, id);
@@ -467,8 +471,7 @@ export function TrendAnalysisPanel({
   // Excel-style per-column value filters, keyed by period.
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnValueFilter>>({});
 
-  // Drag-and-drop layout editing state
-  const [editingTrends, setEditingTrends] = useState(false);
+  // Drag-and-drop layout editing state (editingTrends/setEditingTrends come from parent props)
   const [editTrendRows, setEditTrendRows] = useState<string[][]>([]);
   const [savingTrendLayout, setSavingTrendLayout] = useState(false);
   const [trendLayoutMsg, setTrendLayoutMsg] = useState("");
@@ -2023,10 +2026,18 @@ export function TrendAnalysisPanel({
     .map((rowIds) => rowIds.map(buildTrendGridItem).filter(Boolean) as GridItem[])
     .filter((row) => row.length > 0);
 
+  // Seed editTrendRows when entering edit mode (triggered from parent tab bar or internal button).
+  useEffect(() => {
+    if (editingTrends && editTrendRows.length === 0) {
+      setTrendLayoutMsg("");
+      setEditTrendRows(trendsOrder.map((row) => [...row]));
+    }
+    if (!editingTrends) {
+      setEditTrendRows([]);
+    }
+  }, [editingTrends]);
   const startEditTrends = () => {
-    setTrendLayoutMsg("");
-    setEditTrendRows(trendsOrder.map((row) => [...row]));
-    setEditingTrends(true);
+    setEditingTrends?.(true);
   };
   const applyTrendReorder = (newRows: string[][]) => {
     setEditTrendRows(newRows);
@@ -2198,7 +2209,7 @@ export function TrendAnalysisPanel({
             <span>Drag the handle on any visual to rearrange it, then save.{trendLayoutMsg ? <span className="text-danger"> · {trendLayoutMsg}</span> : null}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={() => setEditingTrends(false)} disabled={savingTrendLayout}
+            <button type="button" onClick={() => setEditingTrends?.(false)} disabled={savingTrendLayout}
               className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel2 px-3 py-1.5 text-[11px] font-bold text-muted transition hover:text-text disabled:opacity-40">
               <X className="h-3.5 w-3.5" /> Cancel
             </button>
