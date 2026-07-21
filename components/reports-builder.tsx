@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { PageShell, Card, StatRow } from "./ui";
 import { formatCurrency, formatPercent } from "@/lib/utils";
-import PrintReportLayout from "./print-report-layout";
 import { FileDown, Printer, Loader2, CheckCircle2, AlertTriangle, FileText, Database, Calendar } from "lucide-react";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 
 type PeriodPreset = "all" | "this_month" | "last_3_months" | "last_6_months" | "this_year" | "last_year" | "custom";
 
@@ -125,8 +122,6 @@ export default function ReportsBuilder({
     matchesProject(risk.project_id) && isInRange(risk.created_at, periodFrom, periodTo)
   );
 
-  const printRef = useRef<HTMLDivElement>(null);
-
   // PDF generation logic
   useEffect(() => {
     if (!isPrinting) return;
@@ -134,55 +129,35 @@ export default function ReportsBuilder({
 
     (async () => {
       try {
-        const el = printRef.current;
-        if (!el) return;
+        const { pdf } = await import("@react-pdf/renderer");
+        const { default: PdfReportDocument } = await import("./pdf-report-document");
+        const { createElement } = await import("react");
 
-        const inner = el.querySelector(".print-only") as HTMLElement | null;
-        if (inner) inner.style.display = "block";
-
-        const canvas = await html2canvas(el, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
+        const doc = createElement(PdfReportDocument, {
+          project: selectedProject,
+          revenueRows: filteredWbsRows,
+          subcontracts: filteredSubcontracts,
+          dailyUpdates: filteredDailyUpdates,
+          risks: filteredRisks,
+          includedSections,
+          periodLabel,
+          costField,
+          revenueField,
         });
 
-        if (inner) inner.style.display = "";
-
+        const blob = await pdf(doc as any).toBlob();
         if (cancelled) return;
-
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = 297; // A4 height in mm
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        const pdf = new jsPDF("p", "mm", "a4");
-        const pageCanvas = document.createElement("canvas");
-        const pageCtx = pageCanvas.getContext("2d")!;
-        const pxPerPage = Math.floor(canvas.width * (pageHeight / imgWidth));
-        let srcY = 0;
-        let page = 0;
-
-        while (srcY < canvas.height) {
-          const sliceH = Math.min(pxPerPage, canvas.height - srcY);
-          pageCanvas.width = canvas.width;
-          pageCanvas.height = sliceH;
-          pageCtx.fillStyle = "#ffffff";
-          pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-          pageCtx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-
-          const sliceData = pageCanvas.toDataURL("image/jpeg", 0.92);
-          const sliceImgH = (sliceH * imgWidth) / canvas.width;
-
-          if (page > 0) pdf.addPage();
-          pdf.addImage(sliceData, "JPEG", 0, 0, imgWidth, sliceImgH);
-
-          srcY += sliceH;
-          page++;
-        }
 
         const projectName = selectedProject ? selectedProject.project_code : "Portfolio";
         const dateStr = new Date().toISOString().slice(0, 10);
-        pdf.save(`${projectName}_Report_${dateStr}.pdf`);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${projectName}_Report_${dateStr}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       } catch (err) {
         console.error("PDF generation failed", err);
       } finally {
@@ -191,7 +166,7 @@ export default function ReportsBuilder({
     })();
 
     return () => { cancelled = true; };
-  }, [isPrinting, selectedProject]);
+  }, [isPrinting, selectedProject, filteredWbsRows, filteredSubcontracts, filteredDailyUpdates, filteredRisks, includedSections, periodLabel, costField, revenueField]);
 
   // Excel generation logic using XLSX (SheetJS)
   const handleExportExcel = () => {
@@ -294,22 +269,7 @@ export default function ReportsBuilder({
 
   return (
     <>
-      {/* Offscreen container for PDF capture */}
-      <div
-        ref={printRef}
-        style={{ position: "fixed", left: 0, top: 0, width: "1100px", zIndex: -9999, opacity: 0, pointerEvents: "none", overflow: "hidden" }}
-      >
-        <PrintReportLayout
-          project={selectedProject}
-          revenueRows={filteredWbsRows}
-          subcontracts={filteredSubcontracts}
-          dailyUpdates={filteredDailyUpdates}
-          risks={filteredRisks}
-          includedSections={includedSections}
-        />
-      </div>
-
-      {/* Standard interactive builder layout (Hidden during browser printing) */}
+      {/* Standard interactive builder layout */}
       <div className="space-y-6 no-print">
         <div className="surface-card p-6 border border-line bg-panel/30 rounded-3xl">
           <h3 className="text-sm font-bold text-text uppercase tracking-wider mb-4 flex items-center gap-2">

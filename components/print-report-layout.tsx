@@ -74,7 +74,7 @@ export default function PrintReportLayout({
               <p>Generated on: <span className="font-semibold text-slate-600">{reportDate}</span></p>
               <p>Time: <span className="font-semibold text-slate-600">{reportTime}</span></p>
             </div>
-            <p className="font-semibold text-slate-600">NMFOC Performance Dashboard</p>
+            <p className="font-semibold text-slate-600">Detasad Projects Dashboard</p>
           </div>
         </div>
       )}
