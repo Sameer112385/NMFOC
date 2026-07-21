@@ -2,11 +2,12 @@ import { PageShell } from '@/components/ui';
 import { PMUpdateForm } from '@/components/pm-update-form';
 import { PMUpdatesTable } from '@/components/pm-updates-table';
 import { getDailyUpdates, getProjectManpowerRates, getProjectMaterialMaster, getProjects, getProjectSubcontracts, getRevenueGeneratingRows, getSalesOrderRevenueRows } from '@/lib/data';
-import { getCurrentAppUser } from '@/lib/current-user';
+import { getCurrentAppUser, requireRouteAccess } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PMDailyUpdatesPage() {
+  await requireRouteAccess('/pm-daily-updates');
   const [projects, revenueWbs, salesOrderRows, updates, manpowerRates, materialMasters, projectSubcontracts] = await Promise.all([
     getProjects(),
     getRevenueGeneratingRows(),

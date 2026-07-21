@@ -1,8 +1,10 @@
 import { PageShell, Badge } from '@/components/ui';
 import { getRevenueRows } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function ComparisonPage() {
+  await requireRouteAccess('/sap-vs-simulation');
   const rows = await getRevenueRows();
 
   return (

@@ -1,8 +1,10 @@
 import { PageShell, Badge } from '@/components/ui';
 import { getComments, getProjects, getRevenueRows } from '@/lib/data';
 import { CommentForm } from '@/components/comment-form';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function CommentsPage() {
+  await requireRouteAccess('/comments');
   const projects = await getProjects();
   const revenueRows = await getRevenueRows();
   const comments = await getComments();

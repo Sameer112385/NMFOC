@@ -2,8 +2,10 @@ import { PageShell, Badge } from '@/components/ui';
 import { buildRiskAlerts } from '@/lib/calculations';
 import { getRevenueRows } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function RiskAlertsPage() {
+  await requireRouteAccess('/risk-alerts');
   const rows = await getRevenueRows();
   const risks = buildRiskAlerts(rows);
 

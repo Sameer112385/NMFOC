@@ -58,6 +58,35 @@ export async function getCurrentAppUser(): Promise<CurrentAppUser | null> {
   }
 }
 
+export type AppRole = 'Admin' | 'Cost Controller' | 'Project Manager' | 'Viewer';
+
+const ALLOWED_ROUTES: Record<AppRole, string[]> = {
+  'Admin':            ['*'],
+  'Cost Controller':  ['/dashboard', '/projects', '/reports', '/upload-cn41', '/pm-daily-updates', '/simulation', '/sap-vs-simulation', '/risk-alerts', '/comments', '/revenue-wbs', '/cost-elements'],
+  'Project Manager':  ['/dashboard', '/projects', '/pm-daily-updates'],
+  'Viewer':           ['/dashboard', '/projects'],
+};
+
+export function getAllowedRoutes(role?: string | null): string[] {
+  return ALLOWED_ROUTES[(role as AppRole)] ?? ALLOWED_ROUTES['Viewer'];
+}
+
+export function canAccessRoute(role?: string | null, pathname?: string): boolean {
+  const allowed = getAllowedRoutes(role);
+  if (allowed.includes('*')) return true;
+  if (!pathname) return false;
+  return allowed.some((route) => pathname === route || pathname.startsWith(route + '/'));
+}
+
+export async function requireRouteAccess(pathname: string) {
+  const user = await getCurrentAppUser();
+  if (user && !canAccessRoute(user.role, pathname)) {
+    const { redirect } = await import('next/navigation');
+    redirect('/dashboard');
+  }
+  return user;
+}
+
 export async function requireAdminUser() {
   const user = await getCurrentAppUser();
   if (!user || user.role !== 'Admin') {
@@ -71,10 +100,9 @@ export function canEditProjectMaster(role?: string | null): boolean {
 }
 
 export function canAccessSettings(role?: string | null): boolean {
-  return role === 'Admin' || role === 'Cost Controller';
+  return role === 'Admin';
 }
 
-// Editing the dashboard layout (global default and per-project overrides) is Admin-only.
 export function canManageDashboardLayout(role?: string | null): boolean {
   return role === 'Admin';
 }

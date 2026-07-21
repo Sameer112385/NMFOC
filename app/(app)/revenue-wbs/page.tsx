@@ -2,8 +2,10 @@ import { PageShell, Badge } from '@/components/ui';
 import { getRevenueGeneratingRows } from '@/lib/data';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 import { RevenueWbsFilter } from '@/components/revenue-wbs-filter';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function RevenueWbsPage() {
+  await requireRouteAccess('/revenue-wbs');
   const rows = await getRevenueGeneratingRows();
   const revenueRows = rows;
 

@@ -133,13 +133,25 @@ export function Sidebar({
 
   const isDark = theme === 'dark';
 
-  const restrictedRoles = ['Project Manager', 'Viewer'];
-  const isRestricted = userRole ? restrictedRoles.includes(userRole) : false;
+  const allowedRoutes = (() => {
+    const role = userRole ?? 'Viewer';
+    const map: Record<string, string[]> = {
+      'Admin':            ['*'],
+      'Cost Controller':  ['/dashboard', '/projects', '/reports', '/upload-cn41', '/pm-daily-updates', '/simulation', '/sap-vs-simulation', '/risk-alerts', '/comments'],
+      'Project Manager':  ['/dashboard', '/projects', '/pm-daily-updates'],
+      'Viewer':           ['/dashboard', '/projects'],
+    };
+    return map[role] ?? map['Viewer'];
+  })();
 
-  const visibleSections = navSections.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => !(isRestricted && item.href === '/settings')),
-  }));
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        allowedRoutes.includes('*') || allowedRoutes.includes(item.href)
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const initials = (userName || userRole || 'U')
     .trim().split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase();

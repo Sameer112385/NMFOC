@@ -1320,79 +1320,86 @@ export function TrendAnalysisPanel({
         return (
           <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
             {/* Planned Cost */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">Planned Cost</span>
                 <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedCost)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedCost)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Project baseline budget</span></div>
             </div>
             {/* Actual Cost */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">Actual Cost (GR55+PM)</span>
                 <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalActualCost)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalActualCost)}</div>
               <div className="mt-2 text-xs flex items-center gap-1.5">
                 <span className={`font-bold ${kpis.costGrowth <= 0 ? "text-success" : "text-danger"}`}>{kpis.costGrowth > 0 ? "+" : ""}{kpis.costGrowth.toFixed(1)}%</span>
                 <span className="text-muted/70">growth vs prev period</span>
               </div>
             </div>
             {/* In the Month Actual Cost */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">In Month Cost ({kpis.activePeriodLabel})</span>
                 <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthCost)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthCost)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Periodic cost for {kpis.activePeriodLabel}</span></div>
             </div>
             {/* Planned Revenue */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-success/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">Planned Revenue</span>
                 <span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Revenue</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedRevenue)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedRevenue)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Project contract value</span></div>
             </div>
             {/* Actual Revenue */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-success/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">Actual Revenue (GR55+PM)</span>
                 <span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Revenue</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalRecognizedRevenue)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalRecognizedRevenue)}</div>
               <div className="mt-2 text-xs flex items-center gap-1.5">
                 <span className={`font-bold ${kpis.revenueGrowth >= 0 ? "text-success" : "text-danger"}`}>{kpis.revenueGrowth > 0 ? "+" : ""}{kpis.revenueGrowth.toFixed(1)}%</span>
                 <span className="text-muted/70">growth vs prev period</span>
               </div>
             </div>
             {/* In Month Revenue */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-success/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">In Month Rev ({kpis.activePeriodLabel})</span>
                 <span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Revenue</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthRevenue)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthRevenue)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Periodic revenue for {kpis.activePeriodLabel}</span></div>
             </div>
             {/* POC% */}
-            <div className="surface-card p-4 relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-success/35 to-transparent" />
               <div className="flex items-center justify-between text-muted">
                 <span className="section-kicker">POC %</span>
                 <span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Progress</span>
               </div>
-              <div className="data-value mt-3 text-[1.22rem] font-semibold text-text">{formatPercent(kpis.pocPercent)}</div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatPercent(kpis.pocPercent)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Percentage of Completion</span></div>
             </div>
           </div>

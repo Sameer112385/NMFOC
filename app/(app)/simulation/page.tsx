@@ -4,8 +4,10 @@ import { formatCurrency, formatPercent } from '@/lib/utils';
 import { RevenueVsSimulationChart, CostComparisonChart, TopWbsChart, PendingChart, PocChart, RiskChart } from '@/components/charts';
 import { buildRiskAlerts } from '@/lib/calculations';
 import { getEffectivePendingCost } from '@/lib/pm-posting';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function SimulationPage() {
+  await requireRouteAccess('/simulation');
   const revenueRows = await getRevenueRows();
   const updates = await getDailyUpdates();
   const risks = buildRiskAlerts(revenueRows);

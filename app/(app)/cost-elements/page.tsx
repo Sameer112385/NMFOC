@@ -1,8 +1,10 @@
 import { PageShell } from '@/components/ui';
 import { CostElementsPageClient } from '@/components/cost-elements-page-client';
 import { getProjectCostElementControl, getProjects } from '@/lib/data';
+import { requireRouteAccess } from '@/lib/current-user';
 
 export default async function CostElementsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+  await requireRouteAccess('/cost-elements');
   const params = await searchParams;
   const projects = await getProjects();
   const selectedProjectId = params.projectId && projects.some((project) => project.id === params.projectId)
