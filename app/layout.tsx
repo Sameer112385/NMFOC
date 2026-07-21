@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'NMFOC Executive Financial Control',
+  title: 'Detasad Project Dashboard',
   description: 'Enterprise project financial tracking, revenue recognition, risk, and reporting built with Next.js and Supabase.',
 };
 
