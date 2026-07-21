@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { ChevronDown, ChevronUp, Database } from 'lucide-react';
+
 import Image from 'next/image';
 
 export default function LoginPage() {
@@ -23,12 +23,6 @@ export default function LoginPage() {
   const logoUrl = baseLogoUrl ? (logoTimestamp ? `${baseLogoUrl}?t=${logoTimestamp}` : baseLogoUrl) : null;
 
   const [isSignUp, setIsSignUp] = useState(false);
-  const [showDbPanel, setShowDbPanel] = useState(false);
-  const [dbUrl, setDbUrl] = useState('');
-  const [dbAnonKey, setDbAnonKey] = useState('');
-  const [dbServiceKey, setDbServiceKey] = useState('');
-  const [dbSaving, setDbSaving] = useState(false);
-  const [dbMessage, setDbMessage] = useState('');
 
   useEffect(() => {
     // Load branding settings from localStorage
@@ -144,34 +138,6 @@ export default function LoginPage() {
     }
   }
 
-  async function handleDbSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!dbUrl || !dbAnonKey) {
-      setDbMessage('URL and Anon Key are required.');
-      return;
-    }
-    setDbSaving(true);
-    setDbMessage('');
-    try {
-      const res = await fetch('/api/settings/supabase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supabaseUrl: dbUrl, supabaseAnonKey: dbAnonKey, supabaseServiceRoleKey: dbServiceKey }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Failed to save.');
-      localStorage.setItem('sap-cn41-supabase-url', dbUrl);
-      localStorage.setItem('sap-cn41-supabase-anon-key', dbAnonKey);
-      setIsSupabaseConfigured(true);
-      setShowDbPanel(false);
-      setDbMessage('');
-    } catch (err) {
-      setDbMessage(err instanceof Error ? err.message : 'Failed to save connection.');
-    } finally {
-      setDbSaving(false);
-    }
-  }
-
   async function handleMagicLink() {
     setLoading(true);
     setMessage('');
@@ -228,67 +194,6 @@ export default function LoginPage() {
           <p className="mt-6 text-xs text-muted/80 font-medium">
             {isSignUp ? "Create a secure account to get started." : "Sign in to access project baselines, updates, and simulations."}
           </p>
-        </div>
-
-        {/* Database connection status / panel */}
-        <div className="mt-6 w-full">
-          <button
-            type="button"
-            onClick={() => setShowDbPanel(v => !v)}
-            className="flex w-full items-center justify-between rounded-lg border border-line bg-panel2/40 px-3.5 py-2.5 text-[11px] font-bold text-text transition hover:bg-panel2/70 hover:border-line-hover"
-          >
-            <span className="flex items-center gap-2">
-              <Database className="h-3.5 w-3.5 text-accent" />
-              <span className="text-muted/80">Database Engine</span>
-              <span className={`ml-1 rounded-full px-2 py-0.5 text-[9px] font-extrabold tracking-wide uppercase ${isSupabaseConfigured ? 'bg-success/10 text-success border border-success/15' : 'bg-warning/10 text-warning border border-warning/15'}`}>
-                {isSupabaseConfigured ? 'Cloud Link' : 'Demo DB'}
-              </span>
-            </span>
-            {showDbPanel ? <ChevronUp className="h-3.5 w-3.5 text-muted/70" /> : <ChevronDown className="h-3.5 w-3.5 text-muted/70" />}
-          </button>
-
-          {showDbPanel && (
-            <form onSubmit={handleDbSave} className="mt-2 rounded-lg border border-line bg-panel2/20 p-4 space-y-3">
-              <div className="text-xs font-bold text-text uppercase tracking-wider">Supabase Connection Settings</div>
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Supabase URL</span>
-                <input
-                  value={dbUrl}
-                  onChange={e => setDbUrl(e.target.value)}
-                  placeholder="https://xxxx.supabase.co"
-                  className={inputClass}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Anon Key</span>
-                <input
-                  value={dbAnonKey}
-                  onChange={e => setDbAnonKey(e.target.value)}
-                  placeholder="eyJ..."
-                  className={inputClass}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Service Role Key <span className="normal-case text-muted/65 font-medium">(optional)</span></span>
-                <input
-                  value={dbServiceKey}
-                  onChange={e => setDbServiceKey(e.target.value)}
-                  placeholder="eyJ..."
-                  className={inputClass}
-                />
-              </label>
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="submit"
-                  disabled={dbSaving}
-                  className="rounded-lg bg-accent text-white px-3.5 py-2 text-xs font-semibold shadow hover:bg-accent-hover transition"
-                >
-                  {dbSaving ? 'Connecting...' : 'Connect Engine'}
-                </button>
-                {dbMessage && <span className="text-[10px] font-semibold text-warning">{dbMessage}</span>}
-              </div>
-            </form>
-          )}
         </div>
 
         <form className="mt-6 w-full space-y-4" onSubmit={handleSubmit}>
@@ -355,6 +260,11 @@ export default function LoginPage() {
             {message}
           </p>
         ) : null}
+
+        <div className="mt-6 flex items-center justify-center gap-2 text-[10px] text-muted/60">
+          <span className={`h-1.5 w-1.5 rounded-full ${isSupabaseConfigured ? 'bg-success' : 'bg-warning'}`} />
+          {isSupabaseConfigured ? 'Connected to Supabase' : 'Local Demo Mode'}
+        </div>
       </div>
     </div>
   );
