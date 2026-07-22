@@ -5,6 +5,7 @@ import { ProjectAdminDetailsForm } from "@/components/project-admin-details-form
 import { ProjectMasterAdminPanel } from "@/components/project-master-admin-panel";
 import { ProjectCostElementControlPanel } from "@/components/project-cost-element-control-panel";
 import { ProjectWbsMasterPanel } from "@/components/project-wbs-master-panel";
+import { ProjectTeamPanel } from "@/components/project-team-panel";
 import { cn } from "@/lib/utils";
 import type { Project, ProjectCostElementControl, ProjectManpowerRate, ProjectMaterialMaster, ProjectSubcontract, ProjectWbsMaster, RevenueWBS, UserProfile } from "@/lib/types";
 
@@ -28,6 +29,7 @@ const tabs = [
   { key: "manpower", label: "Manpower Master" },
   { key: "material", label: "Material Master" },
   { key: "subcontracts", label: "Subcontractor Management" },
+  { key: "team", label: "Project Team" },
 ] as const;
 
 export function ProjectAdminWorkspace({
@@ -141,6 +143,14 @@ export function ProjectAdminWorkspace({
           projectSubcontracts={projectSubcontracts}
           projectManagers={projectManagers}
           section="subcontracts"
+          canEdit={canEdit}
+        />
+      ) : null}
+
+      {activeTab === "team" ? (
+        <ProjectTeamPanel
+          projectId={project.id}
+          initialMembers={project.assigned_users ?? []}
           canEdit={canEdit}
         />
       ) : null}

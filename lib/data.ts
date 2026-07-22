@@ -68,7 +68,7 @@ type StoredCn41Row = {
 
 const PROJECT_SELECT_BASE = 'id, project_code, project_name, client_name, status, created_at';
 const PROJECT_SELECT_EXTENDED =
-  'id, project_code, project_name, client_name, project_manager_user_id, project_manager_name, project_manager_email, project_manager_phone, site_location, subcontractor_name, subcontract_po_number, subcontract_po_amount, subcontract_scope, status, created_at';
+  'id, project_code, project_name, client_name, project_manager_user_id, project_manager_name, project_manager_email, project_manager_phone, site_location, subcontractor_name, subcontract_po_number, subcontract_po_amount, subcontract_scope, assigned_users, status, created_at';
 
 export async function getProjects(): Promise<Project[]> {
   if (await isLocalDbMode()) return readLocalProjects();
@@ -889,15 +889,16 @@ export async function replaceProjectWbsMaster(
 function isMissingProjectExtendedColumnError(message: string) {
   const normalized = message.toLowerCase();
   return [
-      'project_manager_name',
-      'project_manager_email',
-      'project_manager_phone',
-      'project_manager_user_id',
-      'site_location',
+    'project_manager_name',
+    'project_manager_email',
+    'project_manager_phone',
+    'project_manager_user_id',
+    'site_location',
     'subcontractor_name',
     'subcontract_po_number',
     'subcontract_po_amount',
     'subcontract_scope',
+    'assigned_users',
   ].some((column) => normalized.includes(column));
 }
 

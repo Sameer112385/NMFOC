@@ -2,7 +2,7 @@ import { PageShell } from '@/components/ui';
 import { PMUpdateForm } from '@/components/pm-update-form';
 import { PMUpdatesTable } from '@/components/pm-updates-table';
 import { getDailyUpdates, getProjectManpowerRates, getProjectMaterialMaster, getProjects, getProjectSubcontracts, getRevenueGeneratingRows, getSalesOrderRevenueRows } from '@/lib/data';
-import { getCurrentAppUser, requireRouteAccess } from '@/lib/current-user';
+import { getCurrentAppUser, requireRouteAccess, canSubmitPmUpdates } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,8 @@ export default async function PMDailyUpdatesPage() {
   ]);
   const currentUser = await getCurrentAppUser();
   const submittedBy = currentUser?.fullName || currentUser?.email || '';
+  const accessibleProjects = projects.filter((p) => canSubmitPmUpdates(currentUser, p));
+  const accessibleProjectIds = new Set(accessibleProjects.map((p) => p.id));
   const revenueWbsOptions = mergeRevenueWbsOptions(
     revenueWbs.map((row) => ({
       id: row.id ?? row.wbs_code,
@@ -39,11 +41,11 @@ export default async function PMDailyUpdatesPage() {
   return (
     <PageShell title="PM Daily Updates" subtitle="Project Managers can submit daily progress and pending cost for Level 03 revenue WBS.">
       <PMUpdateForm
-        projects={projects.map((project) => ({ id: project.id, project_name: project.project_name }))}
-        revenueWbs={revenueWbsOptions}
-        manpowerRates={manpowerRates}
-        materialMasters={materialMasters}
-        projectSubcontracts={projectSubcontracts}
+        projects={accessibleProjects.map((project) => ({ id: project.id, project_name: project.project_name }))}
+        revenueWbs={revenueWbsOptions.filter((r) => accessibleProjectIds.has(r.project_id))}
+        manpowerRates={manpowerRates.filter((r) => accessibleProjectIds.has(r.project_id))}
+        materialMasters={materialMasters.filter((r) => accessibleProjectIds.has(r.project_id))}
+        projectSubcontracts={projectSubcontracts.filter((r) => accessibleProjectIds.has(r.project_id))}
         submittedBy={submittedBy}
       />
       <PMUpdatesTable

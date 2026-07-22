@@ -3,6 +3,13 @@ export type UserRole = 'Admin' | 'Cost Controller' | 'Project Manager' | 'Viewer
 export type RiskSeverity = 'High' | 'Medium' | 'Low';
 export type RiskStatus = 'Open' | 'In Progress' | 'Closed';
 
+export type ProjectTeamMember = {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role_label: string;
+};
+
 export type Project = {
   id: string;
   project_code: string;
@@ -17,6 +24,7 @@ export type Project = {
   subcontract_po_number?: string | null;
   subcontract_po_amount?: number | null;
   subcontract_scope?: string | null;
+  assigned_users?: ProjectTeamMember[] | null;
   status?: string | null;
   created_at?: string;
 };

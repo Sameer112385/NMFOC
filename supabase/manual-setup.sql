@@ -210,6 +210,10 @@ alter table if exists revenue_wbs
   add column if not exists last_sales_order_date date,
   add column if not exists reporting_period text;
 
+-- Add assigned_users JSONB column for per-project team assignments
+alter table if exists projects
+  add column if not exists assigned_users jsonb;
+
 create index if not exists idx_project_manpower_rates_project on project_manpower_rates(project_id, labor_category);
 create index if not exists idx_project_material_master_project on project_material_master(project_id, revenue_wbs_code);
 create index if not exists idx_project_cost_element_control_project on project_cost_element_control(project_id, cost_element);

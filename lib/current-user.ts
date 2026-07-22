@@ -13,8 +13,8 @@ export type CurrentAppUser = {
 export async function getCurrentAppUser(): Promise<CurrentAppUser | null> {
   const cookieStore = await cookies();
 
-  if (await isLocalDbMode()) {
-    if (!cookieStore.has('sap-cn41-demo-session')) return null;
+  // Demo session takes priority — works even when Supabase is configured
+  if (cookieStore.has('sap-cn41-demo-session')) {
     return {
       id: 'demo-admin',
       email: 'admin@local',
@@ -22,6 +22,10 @@ export async function getCurrentAppUser(): Promise<CurrentAppUser | null> {
       fullName: 'Sameer Shaikh',
       mode: 'demo',
     };
+  }
+
+  if (await isLocalDbMode()) {
+    return null;
   }
 
   try {
@@ -64,7 +68,7 @@ const ALLOWED_ROUTES: Record<AppRole, string[]> = {
   'Admin':            ['*'],
   'Cost Controller':  ['/dashboard', '/projects', '/reports', '/upload-cn41', '/pm-daily-updates', '/simulation', '/sap-vs-simulation', '/risk-alerts', '/comments', '/revenue-wbs', '/cost-elements'],
   'Project Manager':  ['/dashboard', '/projects', '/pm-daily-updates'],
-  'Viewer':           ['/dashboard', '/projects'],
+  'Viewer':           ['/dashboard', '/projects', '/pm-daily-updates'],
 };
 
 export function getAllowedRoutes(role?: string | null): string[] {
@@ -105,4 +109,16 @@ export function canAccessSettings(role?: string | null): boolean {
 
 export function canManageDashboardLayout(role?: string | null): boolean {
   return role === 'Admin';
+}
+
+export function canSubmitPmUpdates(
+  user: CurrentAppUser | null,
+  project: { project_manager_user_id?: string | null; project_manager_email?: string | null; assigned_users?: { user_id: string; email: string }[] | null },
+): boolean {
+  if (!user) return false;
+  if (user.role === 'Admin' || user.role === 'Cost Controller') return true;
+  if (project.project_manager_user_id && project.project_manager_user_id === user.id) return true;
+  if (project.project_manager_email && project.project_manager_email === user.email) return true;
+  if (project.assigned_users?.some((u) => u.user_id === user.id || u.email === user.email)) return true;
+  return false;
 }
