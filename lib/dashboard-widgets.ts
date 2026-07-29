@@ -5,7 +5,7 @@
 // ever deleted. Visibility overrides are stored per-id in the dashboard layout config
 // (see lib/dashboard-layout.ts); anything without an override defaults to visible.
 
-export type DashboardTab = 'summary' | 'trends';
+export type DashboardTab = 'summary' | 'trends' | 'costTrends';
 export type WidgetStatus = 'active' | 'hidden' | 'archived';
 
 // Column span out of a 12-col grid — drives width in the reorderable dashboard grid.
@@ -52,16 +52,21 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'summary.panel.pendingForPosting', tab: 'summary', group: 'Summary · Tables & details', title: 'Pending for Posting', span: 6 },
   { id: 'summary.panel.topRiskExposure', tab: 'summary', group: 'Summary · Tables & details', title: 'Top Risk Exposure', span: 12 },
 
-  // --- Trend Analysis ---
-  { id: 'trends.kpis', tab: 'trends', group: 'Trends · KPIs', title: 'KPI Summary Cards', span: 12 },
-  { id: 'trends.chart.costTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Cost Trend', span: 6 },
-  { id: 'trends.chart.revenueTrend', tab: 'trends', group: 'Trends · Charts', title: 'Project Revenue Trend', span: 6 },
-  { id: 'trends.chart.costVsRevenueGrowth', tab: 'trends', group: 'Trends · Charts', title: 'Cost vs Revenue Growth', span: 6 },
-  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Trends · Charts', title: 'Forecast Trend', span: 6 },
-  { id: 'trends.section.costElementAnalysis', tab: 'trends', group: 'Trends · Sections', title: 'Cost Element Analysis', span: 12 },
-  { id: 'trends.section.subcontractorPo', tab: 'trends', group: 'Trends · Sections', title: 'Subcontractor Performance (PO)', span: 12 },
-  { id: 'trends.section.revenueByWbsMatrix', tab: 'trends', group: 'Trends · Sections', title: 'Revenue by WBS & Period', span: 12 },
-  { id: 'trends.section.drilldown', tab: 'trends', group: 'Trends · Sections', title: 'Transaction Drill-down', span: 12 },
+  // --- Revenue Trends ---
+  { id: 'trends.kpis', tab: 'trends', group: 'Revenue Trends · KPIs', title: 'KPI Summary Cards', span: 12 },
+  { id: 'trends.chart.revenueTrend', tab: 'trends', group: 'Revenue Trends · Charts', title: 'Project Revenue Trend', span: 6 },
+  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Revenue Trends · Charts', title: 'Forecast Trend', span: 6 },
+  { id: 'trends.section.revenueByWbsMatrix', tab: 'trends', group: 'Revenue Trends · Sections', title: 'Revenue by WBS & Period', span: 12 },
+  { id: 'trends.section.drilldown', tab: 'trends', group: 'Revenue Trends · Sections', title: 'Transaction Drill-down', span: 12 },
+
+  // --- Cost Trends ---
+  { id: 'costTrends.kpis', tab: 'costTrends', group: 'Cost Trends · KPIs', title: 'KPI Summary Cards', span: 12 },
+  { id: 'costTrends.chart.costTrendCumulative', tab: 'costTrends', group: 'Cost Trends · Charts', title: 'Project Cost Trend (Cumulative)', span: 6 },
+  { id: 'costTrends.chart.costTrendPeriod', tab: 'costTrends', group: 'Cost Trends · Charts', title: 'Project Cost Trend (Period)', span: 6 },
+  { id: 'costTrends.section.costElementAnalysis', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Cost Element Analysis', span: 12 },
+  { id: 'costTrends.section.subcontractorPo', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Subcontractor Performance (PO)', span: 12 },
+  { id: 'costTrends.section.costByWbsMatrix', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Cost by WBS & Period', span: 12 },
+  { id: 'costTrends.section.drilldown', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Transaction Drill-down', span: 12 },
 ];
 
 // The registry-default order for a tab (flat). Kept for backward compat with sanitize logic.
@@ -87,12 +92,19 @@ export function defaultRowLayout(tab: DashboardTab): string[][] {
   if (tab === 'trends') {
     return [
       ['trends.kpis'],
-      ['trends.chart.costTrend', 'trends.chart.revenueTrend'],
-      ['trends.chart.costVsRevenueGrowth', 'trends.chart.forecastTrend'],
-      ['trends.section.costElementAnalysis'],
-      ['trends.section.subcontractorPo'],
+      ['trends.chart.revenueTrend', 'trends.chart.forecastTrend'],
       ['trends.section.revenueByWbsMatrix'],
       ['trends.section.drilldown'],
+    ];
+  }
+  if (tab === 'costTrends') {
+    return [
+      ['costTrends.kpis'],
+      ['costTrends.chart.costTrendCumulative', 'costTrends.chart.costTrendPeriod'],
+      ['costTrends.section.costElementAnalysis'],
+      ['costTrends.section.subcontractorPo'],
+      ['costTrends.section.costByWbsMatrix'],
+      ['costTrends.section.drilldown'],
     ];
   }
   return [];

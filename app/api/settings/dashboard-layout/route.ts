@@ -16,6 +16,7 @@ export async function GET() {
   const order = {
     summary: await getEffectiveOrder('', 'summary'),
     trends: await getEffectiveOrder('', 'trends'),
+    costTrends: await getEffectiveOrder('', 'costTrends'),
   };
   return NextResponse.json({ layout, order });
 }
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   if (payload.layout) {
     result.layout = await saveGlobalDashboardLayout(payload.layout);
   }
-  if (payload.order && (payload.tab === 'summary' || payload.tab === 'trends')) {
+  if (payload.order && (payload.tab === 'summary' || payload.tab === 'trends' || payload.tab === 'costTrends')) {
     result.order = await saveGlobalOrder(payload.tab, payload.order);
   }
   return NextResponse.json(result);

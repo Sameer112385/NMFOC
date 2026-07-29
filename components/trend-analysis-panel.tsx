@@ -131,6 +131,7 @@ interface TrendAnalysisPanelProps {
   trendsOrder?: string[][];
   editingLayout?: boolean;
   setEditingLayout?: (v: boolean) => void;
+  mode?: "revenue" | "cost";
 }
 
 // ---- Per-column (period) value filter, Excel-autofilter style ----
@@ -183,12 +184,15 @@ function ColumnFilterButton({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = (e: Event) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("touchstart", onPointerDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", place);
-    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("touchstart", onPointerDown);
@@ -311,12 +315,15 @@ function WbsColumnFilter({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = (e: Event) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("touchstart", onPointerDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", place);
-    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("touchstart", onPointerDown);
@@ -424,6 +431,7 @@ function WbsColumnFilter({
 }
 
 export function TrendAnalysisPanel({
+  mode = "revenue",
   currentProjectId,
   projects,
   costRows,
@@ -571,6 +579,86 @@ export function TrendAnalysisPanel({
       })
       .sort((a, b) => a.code.localeCompare(b.code));
   }, [trendData, costRows, wbsCodeToDescMap]);
+
+  const matrixCostWbsOptions = useMemo(() => {
+    const normToCode = new Map<string, string>();
+    costRows.forEach((row) => {
+      const norm = normalizeCode(row.wbs_code);
+      if (!normToCode.has(norm)) normToCode.set(norm, row.wbs_code);
+    });
+    const keys = new Set<string>();
+    trendData.forEach((pt) => {
+      const map = pt.wbsCost || new Map<string, number>();
+      map.forEach((_value, norm) => keys.add(norm));
+    });
+    return Array.from(keys)
+      .map((norm) => {
+        const code = normToCode.get(norm) ?? norm;
+        return { norm, code, desc: wbsCodeToDescMap.get(code) ?? "" };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [trendData, costRows, wbsCodeToDescMap]);
+
+  // Cost decomposed by WBS (rows) x period (columns).
+  const wbsCostMatrix = useMemo(() => {
+    const visiblePoints = trendData;
+    const periods = visiblePoints.map((pt) => pt.period);
+
+    const normToCode = new Map<string, string>();
+    costRows.forEach((row) => {
+      const norm = normalizeCode(row.wbs_code);
+      if (!normToCode.has(norm)) normToCode.set(norm, row.wbs_code);
+    });
+
+    const wbsFilter = new Set(selectedMatrixWbs);
+    const rowKeys = new Set<string>();
+    visiblePoints.forEach((pt) => {
+      const map = pt.wbsCost || new Map<string, number>();
+      map.forEach((_value, norm) => {
+        if (wbsFilter.size === 0 || wbsFilter.has(norm)) rowKeys.add(norm);
+      });
+    });
+
+    let rows = Array.from(rowKeys).map((norm) => {
+      const code = normToCode.get(norm) ?? norm;
+      const cells = visiblePoints.map((pt) => {
+        const map = pt.wbsCost || new Map<string, number>();
+        return map.get(norm) ?? 0;
+      });
+      return {
+        norm,
+        code,
+        desc: wbsCodeToDescMap.get(code) ?? "",
+        cells,
+        total: cells.reduce((sum, value) => sum + value, 0),
+        isUnmapped: !normToCode.has(norm),
+      };
+    });
+
+    // Apply column filters
+    const activeColumnFilters = periods
+      .map((period, index) => ({ index, filter: columnFilters[period] }))
+      .filter((entry): entry is { index: number; filter: ColumnValueFilter } => isColumnFilterActive(entry.filter));
+    if (activeColumnFilters.length) {
+      rows = rows.filter((row) =>
+        activeColumnFilters.every(({ index, filter }) => cellPassesColumnFilter(row.cells[index]!, filter)),
+      );
+    }
+
+    if (hideZeroMatrixRows) rows = rows.filter((row) => row.cells.some((value) => value !== 0));
+
+    rows.sort((a, b) => (matrixSort === "total" ? b.total - a.total : a.code.localeCompare(b.code)));
+
+    const columnTotals = periods.map((_p, index) => rows.reduce((sum, row) => sum + row.cells[index]!, 0));
+
+    return {
+      periods,
+      rows,
+      columnTotals,
+      grandTotal: columnTotals.reduce((sum, value) => sum + value, 0),
+      hasRowFilter: activeColumnFilters.length > 0 || selectedMatrixWbs.length > 0,
+    };
+  }, [trendData, costRows, wbsCodeToDescMap, matrixSort, hideZeroMatrixRows, selectedMatrixWbs, columnFilters]);
 
   // Revenue decomposed by WBS (rows) x period (columns). Reads the breakdown the engine
   // already computed, so every column total equals that period's revenue by construction.
@@ -738,16 +826,83 @@ export function TrendAnalysisPanel({
       }
     });
 
-    // 3. Create the final time-series chart dataset
-    const chartData = periods.map((p) => {
-      const breakdown = periodMap.get(p)!;
-      return {
-        period: p,
-        ...breakdown,
-      };
+    // 3. Compute PM pending cost per period, mapped to cost view mode
+    // Exclude SAP-posted components — once posted they appear in GR55 and must not be double-counted.
+    const PM_PENDING_SUFFIX = " (PM Pending)";
+    const pmPendingMap = new Map<string, number>(); // period → total pending for this view
+
+    // Derive WBS codes visible in the current GR55 filter (respects PO + WBS filters).
+    // PM updates don't carry a PO number, so we restrict them to WBS codes that have
+    // GR55 postings matching the active filters.
+    const allowedWbsCodes = selectedPos.length > 0 || selectedWbs.length > 0
+      ? new Set(targetGr55.map((r) => r.wbs_code.replace(/[^A-Za-z0-9]/g, "").toUpperCase()))
+      : null; // null = no restriction
+
+    // Build wbs_id → wbs_code map from costRows so we can match updates to WBS codes
+    const wbsIdToCode = new Map(costRows.map((r) => [r.id ?? "", r.wbs_code]));
+
+    // Unposted pending per cost type (exclude the SAP-posted portion)
+    const getPmAmount = (up: DailyUpdate): number => {
+      let total = 0;
+      if (costViewMode === "all" || costViewMode === "subcontractor") {
+        if (!up.subcontract_sap_posted) total += up.pending_subcontractor_cost ?? 0;
+      }
+      if (costViewMode === "all" || costViewMode === "manpower") {
+        if (!up.manpower_sap_posted) total += up.pending_manpower_cost ?? 0;
+      }
+      if (costViewMode === "all" || costViewMode === "material") {
+        if (!up.material_sap_posted) total += up.pending_material_cost ?? 0;
+      }
+      if (costViewMode === "all") {
+        // equipment has no individual posting flag — include if general sap_posted is not set
+        if (!up.sap_posted) total += up.pending_equipment_cost ?? 0;
+      }
+      return total;
+    };
+
+    const pmLabel = costViewMode === "all" ? `PM Pending${PM_PENDING_SUFFIX}` :
+      costViewMode === "subcontractor" ? `Subcontractor${PM_PENDING_SUFFIX}` :
+      costViewMode === "manpower" ? `Manpower${PM_PENDING_SUFFIX}` :
+      `Material${PM_PENDING_SUFFIX}`;
+
+    // For each period take the LATEST update per WBS (pending is a state snapshot, not incremental).
+    const latestPerWbsPerPeriod = new Map<string, Map<string, DailyUpdate>>();
+    updates.forEach((up) => {
+      if (!up.update_date || isWbsGrouped) return;
+      // Apply PO/WBS restriction derived from GR55 filtered set
+      if (allowedWbsCodes) {
+        const upWbs = wbsIdToCode.get(up.revenue_wbs_id ?? "");
+        if (!upWbs) return;
+        if (!allowedWbsCodes.has(upWbs.replace(/[^A-Za-z0-9]/g, "").toUpperCase())) return;
+      }
+      const p = getPeriodKey(up.update_date);
+      if (!periods.includes(p)) return;
+      if (!latestPerWbsPerPeriod.has(p)) latestPerWbsPerPeriod.set(p, new Map());
+      const wbsMap = latestPerWbsPerPeriod.get(p)!;
+      const key = up.revenue_wbs_id || up.update_date;
+      const existing = wbsMap.get(key);
+      if (!existing || up.update_date > existing.update_date) wbsMap.set(key, up);
     });
 
-    // 4. Compute lifetime totals to see "Which consumes most cost"
+    let hasPmData = false;
+    latestPerWbsPerPeriod.forEach((wbsMap, p) => {
+      let periodTotal = 0;
+      wbsMap.forEach((up) => { periodTotal += getPmAmount(up); });
+      if (periodTotal > 0) {
+        pmPendingMap.set(p, periodTotal);
+        hasPmData = true;
+      }
+    });
+
+    // 4. Create the final time-series chart dataset (SAP actuals + PM pending column)
+    const chartData = periods.map((p) => {
+      const breakdown = periodMap.get(p)!;
+      const row: Record<string, unknown> = { period: p, ...breakdown };
+      if (hasPmData) row[pmLabel] = pmPendingMap.get(p) ?? 0;
+      return row;
+    });
+
+    // 5. Compute lifetime totals (SAP only — PM pending shown separately in ranking)
     const totalsMap = new Map<string, number>();
     uniqueKeys.forEach((key) => totalsMap.set(key, 0));
 
@@ -759,27 +914,37 @@ export function TrendAnalysisPanel({
       }
     });
 
+    // Add PM pending as its own ranking entry
+    if (hasPmData) {
+      const totalPm = Array.from(pmPendingMap.values()).reduce((s, v) => s + v, 0);
+      totalsMap.set(pmLabel, totalPm);
+    }
+
     const categoryTotals = Array.from(totalsMap.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    const totalActualCostSum = categoryTotals.reduce((sum, item) => sum + item.value, 0);
+    const sapOnlyTotals = categoryTotals.filter((t) => !t.name.endsWith(PM_PENDING_SUFFIX));
+    const totalActualCostSum = sapOnlyTotals.reduce((sum, item) => sum + item.value, 0);
 
-    const highestCostConsumer = categoryTotals.length > 0 ? categoryTotals[0] : null;
+    const highestCostConsumer = sapOnlyTotals.length > 0 ? sapOnlyTotals[0] : null;
     const highestCostPercentage =
       highestCostConsumer && totalActualCostSum > 0
         ? (highestCostConsumer.value / totalActualCostSum) * 100
         : 0;
 
+    const allChartKeys = hasPmData ? [...uniqueKeys, pmLabel] : uniqueKeys;
+
     return {
-      uniqueCategories: uniqueKeys,
+      uniqueCategories: allChartKeys,
+      pmLabel: hasPmData ? pmLabel : null,
       chartData,
       categoryTotals,
       highestCostConsumer,
       highestCostPercentage,
       isWbsGrouped,
     };
-  }, [gr55Rows, selectedWbs, wbsMaster, costElementControl, periodType, trendData, costViewMode, selectedPos]);
+  }, [gr55Rows, updates, costRows, selectedWbs, wbsMaster, costElementControl, periodType, trendData, costViewMode, selectedPos]);
 
   // Subcontractor Performance by PO Number
   const poPerformanceData = useMemo(() => {
@@ -1308,7 +1473,7 @@ export function TrendAnalysisPanel({
 
   const isTrendVisible = (id: string): boolean => {
     if (isWidgetHidden(dashboardLayout, id)) return false;
-    if (id === "trends.section.subcontractorPo" && (costViewMode !== "subcontractor" || selectedPos.length === 1 || !poPerformanceData)) return false;
+    if ((id === "trends.section.subcontractorPo" || id === "costTrends.section.subcontractorPo") && (costViewMode !== "subcontractor" || !poPerformanceData)) return false;
     return true;
   };
 
@@ -1318,43 +1483,7 @@ export function TrendAnalysisPanel({
     switch (id) {
       case "trends.kpis":
         return (
-          <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
-            {/* Planned Cost */}
-            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
-              <div className="flex items-center justify-between text-muted">
-                <span className="section-kicker">Planned Cost</span>
-                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
-              </div>
-              <div className="grow" />
-              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedCost)}</div>
-              <div className="mt-2 text-xs text-muted/70"><span>Project baseline budget</span></div>
-            </div>
-            {/* Actual Cost */}
-            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
-              <div className="flex items-center justify-between text-muted">
-                <span className="section-kicker">Actual Cost (GR55+PM)</span>
-                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
-              </div>
-              <div className="grow" />
-              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalActualCost)}</div>
-              <div className="mt-2 text-xs flex items-center gap-1.5">
-                <span className={`font-bold ${kpis.costGrowth <= 0 ? "text-success" : "text-danger"}`}>{kpis.costGrowth > 0 ? "+" : ""}{kpis.costGrowth.toFixed(1)}%</span>
-                <span className="text-muted/70">growth vs prev period</span>
-              </div>
-            </div>
-            {/* In the Month Actual Cost */}
-            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
-              <div className="flex items-center justify-between text-muted">
-                <span className="section-kicker">In Month Cost ({kpis.activePeriodLabel})</span>
-                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
-              </div>
-              <div className="grow" />
-              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthCost)}</div>
-              <div className="mt-2 text-xs text-muted/70"><span>Periodic cost for {kpis.activePeriodLabel}</span></div>
-            </div>
+          <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {/* Planned Revenue */}
             <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-success/35 to-transparent" />
@@ -1405,50 +1534,101 @@ export function TrendAnalysisPanel({
           </div>
         );
 
-      case "trends.chart.costTrend":
+      case "costTrends.kpis":
+        return (
+          <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {/* Planned Cost */}
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
+              <div className="flex items-center justify-between text-muted">
+                <span className="section-kicker">Planned Cost</span>
+                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
+              </div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.plannedCost)}</div>
+              <div className="mt-2 text-xs text-muted/70"><span>Project baseline budget</span></div>
+            </div>
+            {/* Actual Cost */}
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
+              <div className="flex items-center justify-between text-muted">
+                <span className="section-kicker">Actual Cost (GR55+PM)</span>
+                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
+              </div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.totalActualCost)}</div>
+              <div className="mt-2 text-xs flex items-center gap-1.5">
+                <span className={`font-bold ${kpis.costGrowth <= 0 ? "text-success" : "text-danger"}`}>{kpis.costGrowth > 0 ? "+" : ""}{kpis.costGrowth.toFixed(1)}%</span>
+                <span className="text-muted/70">growth vs prev period</span>
+              </div>
+            </div>
+            {/* In the Month Actual Cost */}
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
+              <div className="flex items-center justify-between text-muted">
+                <span className="section-kicker">In Month Cost ({kpis.activePeriodLabel})</span>
+                <span className="text-[9px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Cost</span>
+              </div>
+              <div className="grow" />
+              <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthCost)}</div>
+              <div className="mt-2 text-xs text-muted/70"><span>Periodic cost for {kpis.activePeriodLabel}</span></div>
+            </div>
+          </div>
+        );
+
+      case "costTrends.chart.costTrendCumulative":
         return (
           <div className="h-full surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
             <div className="flex items-center justify-between border-b border-line/30 pb-3 mb-4">
               <div>
-                <h3 className="text-sm font-bold text-text">Project Cost Trend</h3>
-                <p className="text-[11px] text-muted">SAP actual GR55 transaction history over time.</p>
-              </div>
-              <div className="no-print flex rounded-lg border border-line bg-panel2 p-0.5">
-                <button onClick={() => setCostChartMode("cumulative")} className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-md transition ${costChartMode === "cumulative" ? "bg-accent text-white" : "text-muted hover:text-text"}`}>Cumulative</button>
-                <button onClick={() => setCostChartMode("period")} className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-md transition ${costChartMode === "period" ? "bg-accent text-white" : "text-muted hover:text-text"}`}>Period</button>
+                <h3 className="text-sm font-bold text-text">Project Cost Trend (Cumulative)</h3>
+                <p className="text-[11px] text-muted">SAP actual GR55 transaction history over time (Cumulative).</p>
               </div>
             </div>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                {costChartMode === "cumulative" ? (
-                  <AreaChart data={trendData} onClick={handleChartClick}>
-                    <defs>
-                      <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
-                    <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
-                    <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
-                    <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                    <Area type="monotone" dataKey="cumulativeForecastCost" stroke="#f59e0b" strokeWidth={2.5} fillOpacity={1} fill="url(#costGrad)" name="Cumulative Cost" />
-                  </AreaChart>
-                ) : (
-                  <AreaChart data={trendData} onClick={handleChartClick}>
-                    <defs>
-                      <linearGradient id="costPeriodGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.12} />
-                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
-                    <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
-                    <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
-                    <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                    <Area type="monotone" dataKey="forecastCost" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#costPeriodGrad)" name="Period Cost" />
-                  </AreaChart>
-                )}
+                <AreaChart data={trendData} onClick={handleChartClick}>
+                  <defs>
+                    <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
+                  <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
+                  <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
+                  <Area type="monotone" dataKey="cumulativeForecastCost" stroke="#f59e0b" strokeWidth={2.5} fillOpacity={1} fill="url(#costGrad)" name="Cumulative Cost" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        );
+
+      case "costTrends.chart.costTrendPeriod":
+        return (
+          <div className="h-full surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
+            <div className="flex items-center justify-between border-b border-line/30 pb-3 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-text">Project Cost Trend (Period)</h3>
+                <p className="text-[11px] text-muted">SAP actual GR55 transaction history over time (Periodic).</p>
+              </div>
+            </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} onClick={handleChartClick}>
+                  <defs>
+                    <linearGradient id="costPeriodGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.12} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
+                  <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
+                  <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
+                  <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
+                  <Area type="monotone" dataKey="forecastCost" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#costPeriodGrad)" name="Period Cost" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
@@ -1552,6 +1732,7 @@ export function TrendAnalysisPanel({
         );
 
       case "trends.section.costElementAnalysis":
+      case "costTrends.section.costElementAnalysis":
         return (
           <div className="h-full surface-card p-6 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card relative z-20">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-line/30 pb-4 mb-6">
@@ -1609,10 +1790,19 @@ export function TrendAnalysisPanel({
                         <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                         <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                         <Legend verticalAlign="top" height={36} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 9 }} />
-                        {categoryTrendData.uniqueCategories.map((category, index) => (
-                          <Bar key={category} dataKey={category} stackId="a" fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
-                            name={categoryTrendData.isWbsGrouped ? (wbsCodeToDescMap.get(category) || category) : category} />
-                        ))}
+                        {categoryTrendData.uniqueCategories.map((category, index) => {
+                          const isPm = category === categoryTrendData.pmLabel;
+                          const colorIndex = isPm ? 0 : index;
+                          const color = CATEGORY_COLORS[colorIndex % CATEGORY_COLORS.length]!;
+                          return (
+                            <Bar key={category} dataKey={category} stackId="a"
+                              fill={isPm ? `${color}55` : color}
+                              stroke={isPm ? color : undefined}
+                              strokeWidth={isPm ? 1 : 0}
+                              strokeDasharray={isPm ? "4 2" : undefined}
+                              name={categoryTrendData.isWbsGrouped ? (wbsCodeToDescMap.get(category) || category) : category} />
+                          );
+                        })}
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1631,9 +1821,12 @@ export function TrendAnalysisPanel({
                           tickFormatter={(tick) => { if (!categoryTrendData.isWbsGrouped) return tick; const desc = wbsCodeToDescMap.get(tick); if (!desc) return tick; return desc.length > 18 ? `${desc.slice(0, 18)}...` : desc; }} />
                         <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} labelFormatter={(label: any) => { if (!categoryTrendData.isWbsGrouped) return label; const desc = wbsCodeToDescMap.get(String(label)); return desc ? `${label} - ${desc}` : label; }} />} />
                         <Bar dataKey="value" name="Total Cost" radius={[0, 4, 4, 0]}>
-                          {categoryTrendData.categoryTotals.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[categoryTrendData.uniqueCategories.indexOf(entry.name) !== -1 ? categoryTrendData.uniqueCategories.indexOf(entry.name) % CATEGORY_COLORS.length : index % CATEGORY_COLORS.length]} />
-                          ))}
+                          {categoryTrendData.categoryTotals.map((entry, index) => {
+                            const isPm = entry.name === categoryTrendData.pmLabel;
+                            const colorIdx = categoryTrendData.uniqueCategories.indexOf(entry.name);
+                            const color = CATEGORY_COLORS[(colorIdx !== -1 ? colorIdx : index) % CATEGORY_COLORS.length]!;
+                            return <Cell key={`cell-${index}`} fill={isPm ? `${color}77` : color} />;
+                          })}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -1645,6 +1838,7 @@ export function TrendAnalysisPanel({
         );
 
       case "trends.section.subcontractorPo":
+      case "costTrends.section.subcontractorPo":
         return (
           <div className="h-full surface-card p-6 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-line/30 pb-4 mb-6">
@@ -1874,7 +2068,120 @@ export function TrendAnalysisPanel({
           </div>
         );
 
+      case "costTrends.section.costByWbsMatrix":
+        return (
+          <div className="h-full relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-line/30 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-text">Cost by WBS &amp; Period</h3>
+                <p className="mt-1 text-xs text-muted/70">{wbsCostMatrix.rows.length} WBS element{wbsCostMatrix.rows.length === 1 ? "" : "s"} across {wbsCostMatrix.periods.length} period{wbsCostMatrix.periods.length === 1 ? "" : "s"}. Column totals match the trend charts above.</p>
+              </div>
+              <div className="no-print flex items-center gap-4">
+                <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-muted">
+                  <input type="checkbox" checked={hideZeroMatrixRows} onChange={(event) => setHideZeroMatrixRows(event.target.checked)} className="h-3.5 w-3.5 rounded border-line accent-accent" />
+                  Hide empty rows
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-muted">Sort rows by</span>
+                  <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
+                    {(["code", "total"] as const).map((mode) => (
+                      <button key={mode} type="button" title={mode === "code" ? "Order rows by WBS code (ascending)" : "Order rows by total cost (largest first)"} onClick={() => setMatrixSort(mode)}
+                        className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"}`}>
+                        {mode === "code" ? "WBS Code" : "Total ▾"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {(selectedMatrixWbs.length > 0 || wbsCostMatrix.hasRowFilter) && (
+              <div className="no-print mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-muted">Active filters:</span>
+                {selectedMatrixWbs.length > 0 && (
+                  <button type="button" onClick={() => setSelectedMatrixWbs([])} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
+                    {selectedMatrixWbs.length} WBS selected <X className="h-3 w-3" />
+                  </button>
+                )}
+                {Object.values(columnFilters).some(isColumnFilterActive) && (
+                  <button type="button" onClick={() => setColumnFilters({})} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
+                    Clear column filters <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-line/40 bg-panel2/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              <span>Every column shows <strong className="text-text">actual and pending cost (GR55 + PM updates)</strong> posted in that period.</span>
+            </div>
+            {wbsCostMatrix.hasRowFilter && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 px-3 py-2 text-[11px] leading-relaxed text-accent">
+                <Filter className="mt-0.5 h-3.5 w-3.5 shrink-0" fill="currentColor" />
+                <span>A row filter is active, so some WBS rows are hidden. The totals below are <strong>subtotals of the visible rows</strong>.</span>
+              </div>
+            )}
+            {wbsCostMatrix.rows.length > 0 && wbsCostMatrix.periods.length > 0 ? (
+              <div className="mt-4 overflow-x-auto overflow-y-auto max-h-[580px]">
+                <table style={{ minWidth: 280 + wbsCostMatrix.periods.length * 120 + 150 }} className="w-full text-xs border-separate border-spacing-0">
+                  <thead className="text-left text-muted/80">
+                    <tr>
+                      <th className="sticky top-0 left-0 z-30 w-[280px] min-w-[280px] border-b border-line/45 bg-panel2 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] shadow-[1px_0_0_0_rgb(var(--color-line))]">
+                        <span className="inline-flex items-center">WBS<WbsColumnFilter options={matrixCostWbsOptions} selected={selectedMatrixWbs} onChange={setSelectedMatrixWbs} /></span>
+                      </th>
+                      {wbsCostMatrix.periods.map((period) => {
+                        return (
+                          <th key={period} className="sticky top-0 z-20 border-b border-line/45 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] whitespace-nowrap">
+                            <span className="inline-flex items-center justify-end">{period}<ColumnFilterButton period={period} value={columnFilters[period] ?? DEFAULT_COLUMN_FILTER} onChange={(next) => setColumnFilters((prev) => ({ ...prev, [period]: next }))} /></span>
+                          </th>
+                        );
+                      })}
+                      <th className="sticky top-0 z-20 border-b border-line/45 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em]">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-text font-medium">
+                    {wbsCostMatrix.rows.map((row) => (
+                      <tr key={row.norm} className="group">
+                        <td className="sticky left-0 z-10 w-[280px] min-w-[280px] border-b border-line/30 bg-panel px-4 py-3 shadow-[1px_0_0_0_rgb(var(--color-line))] transition group-hover:bg-panel2">
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => { setDrilldownWbs(row.norm); setSelectedPeriod(null); setDrilldownTab("sap"); setDrilldownSearch(""); setDrilldownPage(1); }}
+                              title="Show this WBS's actual cost postings"
+                              className={`font-mono whitespace-nowrap underline-offset-2 hover:underline ${drilldownWbs === row.norm ? "text-accent font-bold" : "text-accent"}`}>
+                              {row.code}
+                            </button>
+                            {row.isUnmapped && (<span title="Posted cost on a WBS that is not present in the WBS master" className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-danger">Unmapped</span>)}
+                          </div>
+                          {row.desc && (<div className="mt-0.5 max-w-[280px] truncate text-[11px] text-muted/70" title={row.desc}>{row.desc}</div>)}
+                        </td>
+                        {row.cells.map((value, index) => (
+                          <td key={wbsCostMatrix.periods[index]} className={`border-b border-line/30 px-4 py-3 text-right font-mono whitespace-nowrap transition group-hover:bg-panel2/40 ${value === 0 ? "text-muted/40" : value < 0 ? "text-danger" : "text-success"}`}>
+                            {value === 0 ? "—" : formatCurrency(value)}
+                          </td>
+                        ))}
+                        <td className={`border-b border-line/30 px-4 py-3 text-right font-mono font-bold whitespace-nowrap transition group-hover:bg-panel2/40 ${row.total < 0 ? "text-danger" : "text-text"}`}>{formatCurrency(row.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="font-bold text-text">
+                    <tr>
+                      <td className="sticky bottom-0 left-0 z-30 w-[280px] min-w-[280px] bg-panel2 border-t-2 border-line/65 px-4 py-3 text-[11px] uppercase tracking-wider shadow-[1px_0_0_0_rgb(var(--color-line))]">Total &middot; {wbsCostMatrix.rows.length} WBS</td>
+                      {wbsCostMatrix.columnTotals.map((total, index) => (
+                        <td key={wbsCostMatrix.periods[index]} className="sticky bottom-0 z-20 bg-panel2 border-t-2 border-line/65 px-4 py-3 text-right font-mono whitespace-nowrap text-text">{formatCurrency(total)}</td>
+                      ))}
+                      <td className="sticky bottom-0 z-20 bg-panel2 border-t-2 border-line/65 px-4 py-3 text-right font-mono whitespace-nowrap">{formatCurrency(wbsCostMatrix.grandTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-sm text-muted">
+                <div className="font-semibold text-text">No cost to break down</div>
+                <div className="mt-1 text-xs">No cost-incurring WBS produced cost in the selected range.</div>
+              </div>
+            )}
+          </div>
+        );
+
       case "trends.section.drilldown":
+      case "costTrends.section.drilldown":
         return (
           <div className="h-full rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line/30 pb-4">
@@ -2018,7 +2325,7 @@ export function TrendAnalysisPanel({
 
   const buildTrendGridItem = (id: string): GridItem | null => {
     const w = getWidget(id);
-    if (!w || w.tab !== "trends" || !isTrendVisible(id)) return null;
+    if (!w || w.tab !== (mode === "cost" ? "costTrends" : "trends") || !isTrendVisible(id)) return null;
     return {
       id,
       span: w.span,
@@ -2056,7 +2363,7 @@ export function TrendAnalysisPanel({
       const res = await fetch(`/api/dashboard-layout/${currentProjectId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: editTrendRows, tab: "trends" }),
+        body: JSON.stringify({ order: editTrendRows, tab: mode === "cost" ? "costTrends" : "trends" }),
       });
       if (!res.ok) throw new Error();
       window.location.reload();

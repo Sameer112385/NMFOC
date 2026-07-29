@@ -48,9 +48,10 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
   ]);
 
   const dashboardLayout = await getEffectiveDashboardLayout(projectId);
-  const [summaryOrder, trendsOrder] = await Promise.all([
+  const [summaryOrder, trendsOrder, costTrendsOrder] = await Promise.all([
     getEffectiveRowOrder(projectId, 'summary'),
     getEffectiveRowOrder(projectId, 'trends'),
+    getEffectiveRowOrder(projectId, 'costTrends'),
   ]);
   const currentUser = await getCurrentAppUser();
   const canCustomize = canManageDashboardLayout(currentUser?.role);
@@ -91,6 +92,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
         canCustomize={canCustomize}
         summaryOrder={summaryOrder}
         trendsOrder={trendsOrder}
+        costTrendsOrder={costTrendsOrder}
       />
     </PageShell>
   );

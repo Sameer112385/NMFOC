@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   Sun,
   Moon,
+  Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -47,8 +48,9 @@ const navSections: NavSection[] = [
   {
     label: 'Overview',
     items: [
-      { href: '/dashboard', label: 'Dashboard',  icon: LayoutDashboard,   iconBgLight: 'bg-blue-100',   iconColorLight: 'text-blue-600',   iconBgDark: 'bg-blue-500/20',   iconColorDark: 'text-blue-300'   },
-      { href: '/projects',  label: 'Projects',   icon: FolderKanban,      iconBgLight: 'bg-sky-100',    iconColorLight: 'text-sky-600',    iconBgDark: 'bg-sky-500/20',    iconColorDark: 'text-sky-300'    },
+      { href: '/dashboard',           label: 'Dashboard',          icon: LayoutDashboard, iconBgLight: 'bg-blue-100',    iconColorLight: 'text-blue-600',   iconBgDark: 'bg-blue-500/20',   iconColorDark: 'text-blue-300'   },
+      { href: '/dashboard/portfolio', label: 'Portfolio Overview', icon: Layers,          iconBgLight: 'bg-indigo-100',  iconColorLight: 'text-indigo-600', iconBgDark: 'bg-indigo-500/20', iconColorDark: 'text-indigo-300' },
+      { href: '/projects',            label: 'Projects',           icon: FolderKanban,    iconBgLight: 'bg-sky-100',     iconColorLight: 'text-sky-600',    iconBgDark: 'bg-sky-500/20',    iconColorDark: 'text-sky-300'    },
       { href: '/reports',   label: 'Reports',    icon: BarChart2,          iconBgLight: 'bg-cyan-100',   iconColorLight: 'text-cyan-700',   iconBgDark: 'bg-cyan-500/20',   iconColorDark: 'text-cyan-300'   },
     ],
   },

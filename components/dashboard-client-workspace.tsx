@@ -114,6 +114,7 @@ interface DashboardClientWorkspaceProps {
   canCustomize?: boolean;
   summaryOrder?: string[][];
   trendsOrder?: string[][];
+  costTrendsOrder?: string[][];
 }
 
 export function DashboardClientWorkspace({
@@ -133,16 +134,18 @@ export function DashboardClientWorkspace({
   canCustomize = false,
   summaryOrder = [],
   trendsOrder = [],
+  costTrendsOrder = [],
 }: DashboardClientWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<"summary" | "trends">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "trends" | "costTrends">("summary");
   const [customizing, setCustomizing] = useState(false);
   // Layout edit mode (drag to reorder). editRows is the row-based order.
   const [editingLayout, setEditingLayout] = useState(false);
   const [editRows, setEditRows] = useState<string[][]>([]);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutMsg, setLayoutMsg] = useState("");
-  // Trends tab edit mode — state lives here so the tab-bar button can trigger it.
+  // Trends & Cost Trends tab edit mode — states live here so the tab-bar buttons can trigger them.
   const [editingTrends, setEditingTrends] = useState(false);
+  const [editingCostTrends, setEditingCostTrends] = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
   const [selectedPos, setSelectedPos] = useState<string[]>([]);
 
@@ -509,8 +512,10 @@ export function DashboardClientWorkspace({
       setLayoutMsg("");
       setEditRows(summaryOrder.map((row) => [...row]));
       setEditingLayout(true);
-    } else {
+    } else if (activeTab === "trends") {
       setEditingTrends(true);
+    } else if (activeTab === "costTrends") {
+      setEditingCostTrends(true);
     }
   };
   const applySummaryReorder = (newRows: string[][]) => {
@@ -555,14 +560,23 @@ export function DashboardClientWorkspace({
                 activeTab === "trends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
               )}
             >
-              Trend Analysis
+              Revenue Trends
+            </button>
+            <button
+              onClick={() => setActiveTab("costTrends")}
+              className={cn(
+                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                activeTab === "costTrends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+              )}
+            >
+              Cost Trends
             </button>
           </div>
-          {canCustomize && !editingLayout && !editingTrends ? (
+          {canCustomize && !editingLayout && !editingTrends && !editingCostTrends ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={startEditLayout}
-                title={`Drag to rearrange the ${activeTab === "summary" ? "Summary" : "Trend"} visuals`}
+                title={`Drag to rearrange the ${activeTab === "summary" ? "Summary" : activeTab === "trends" ? "Revenue Trend" : "Cost Trend"} visuals`}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-muted transition-all duration-100 hover:bg-panel2 hover:text-text"
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -654,8 +668,9 @@ export function DashboardClientWorkspace({
             onReorder={applySummaryReorder}
           />
         </div>
-      ) : (
+      ) : activeTab === "trends" ? (
         <TrendAnalysisPanel
+          mode="revenue"
           currentProjectId={project.id}
           projects={projects}
           costRows={allWbsRows}
@@ -672,6 +687,26 @@ export function DashboardClientWorkspace({
           trendsOrder={trendsOrder}
           editingLayout={editingTrends}
           setEditingLayout={setEditingTrends}
+        />
+      ) : (
+        <TrendAnalysisPanel
+          mode="cost"
+          currentProjectId={project.id}
+          projects={projects}
+          costRows={allWbsRows}
+          gr55Rows={gr55Rows}
+          historicalRevenueRows={historicalRevenueRows}
+          updates={updates}
+          wbsMaster={projectWbsMaster}
+          costElementControl={costElementControl}
+          selectedPos={selectedPos}
+          setSelectedPos={setSelectedPos}
+          poOptions={poOptions}
+          dashboardLayout={dashboardLayout}
+          canCustomize={canCustomize}
+          trendsOrder={costTrendsOrder}
+          editingLayout={editingCostTrends}
+          setEditingLayout={setEditingCostTrends}
         />
       )}
     </div>

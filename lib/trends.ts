@@ -25,6 +25,7 @@ export interface TrendDataPoint {
    * identical in both branches. If they ever diverge this must split into two maps.
    */
   wbsRevenue: Map<string, number>;
+  wbsCost: Map<string, number>;
 }
 
 // Normalize WBS code helper
@@ -348,6 +349,8 @@ export function buildTrendData(params: {
   for (let i = 0; i < periodKeys.length; i++) {
     const p = periodKeys[i]!;
 
+    const wbsCost = new Map<string, number>();
+
     // Find actual cost postings for this period
     const periodGr55 = filteredGr55.filter((row) => getPeriodKey(row.posting_date) === p);
     periodGr55.forEach((row) => {
@@ -356,6 +359,9 @@ export function buildTrendData(params: {
       if (activeWbsNorm) {
         const existing = wbsActualCostMap.get(activeWbsNorm) || 0;
         wbsActualCostMap.set(activeWbsNorm, existing + Number(row.amount || 0));
+
+        const existingPeriod = wbsCost.get(activeWbsNorm) || 0;
+        wbsCost.set(activeWbsNorm, existingPeriod + Number(row.amount || 0));
       }
     });
 
@@ -366,6 +372,9 @@ export function buildTrendData(params: {
       if (activeWbsNorm) {
         const existing = wbsPendingCostMap.get(activeWbsNorm) || 0;
         wbsPendingCostMap.set(activeWbsNorm, existing + getEffectivePendingCost(up));
+
+        const existingPeriod = wbsCost.get(activeWbsNorm) || 0;
+        wbsCost.set(activeWbsNorm, existingPeriod + getEffectivePendingCost(up));
       }
     });
 
@@ -484,6 +493,7 @@ export function buildTrendData(params: {
       costGrowthPercent,
       revenueGrowthPercent,
       wbsRevenue,
+      wbsCost,
     });
 
     // Past periods feed the prior-postings baseline that the current period subtracts.

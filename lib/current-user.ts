@@ -66,9 +66,9 @@ export type AppRole = 'Admin' | 'Cost Controller' | 'Project Manager' | 'Viewer'
 
 const ALLOWED_ROUTES: Record<AppRole, string[]> = {
   'Admin':            ['*'],
-  'Cost Controller':  ['/dashboard', '/projects', '/reports', '/upload-cn41', '/pm-daily-updates', '/simulation', '/sap-vs-simulation', '/risk-alerts', '/comments', '/revenue-wbs', '/cost-elements'],
-  'Project Manager':  ['/dashboard', '/projects', '/pm-daily-updates'],
-  'Viewer':           ['/dashboard', '/projects', '/pm-daily-updates'],
+  'Cost Controller':  ['/dashboard', '/dashboard/portfolio', '/projects', '/reports', '/upload-cn41', '/pm-daily-updates', '/simulation', '/sap-vs-simulation', '/risk-alerts', '/comments', '/revenue-wbs', '/cost-elements'],
+  'Project Manager':  ['/dashboard', '/dashboard/portfolio', '/projects', '/pm-daily-updates'],
+  'Viewer':           ['/dashboard', '/dashboard/portfolio', '/projects', '/pm-daily-updates'],
 };
 
 export function getAllowedRoutes(role?: string | null): string[] {

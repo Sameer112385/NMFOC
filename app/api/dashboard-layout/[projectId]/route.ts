@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   if (payload.layout) {
     result.layout = await saveProjectDashboardLayout(projectId, payload.layout);
   }
-  if (payload.order && (payload.tab === 'summary' || payload.tab === 'trends')) {
+  if (payload.order && (payload.tab === 'summary' || payload.tab === 'trends' || payload.tab === 'costTrends')) {
     result.order = await saveProjectRowOrder(projectId, payload.tab, payload.order);
   }
   return NextResponse.json(result);

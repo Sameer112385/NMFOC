@@ -75,7 +75,7 @@ function migrateToRows(raw: unknown, tab: DashboardTab): string[][] {
 function sanitizeTabRowOrder(raw: unknown): TabRowOrder {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const out: TabRowOrder = {};
-  for (const tab of ['summary', 'trends'] as DashboardTab[]) {
+  for (const tab of ['summary', 'trends', 'costTrends'] as DashboardTab[]) {
     const clean = migrateToRows(obj[tab], tab);
     if (clean.length) out[tab] = clean;
   }
@@ -179,9 +179,10 @@ export async function getProjectLayoutBundle(projectId: string): Promise<{
       global: {
         summary: completeRows(stored.order.global.summary, 'summary'),
         trends: completeRows(stored.order.global.trends, 'trends'),
+        costTrends: completeRows(stored.order.global.costTrends, 'costTrends'),
       },
       project: projectOrder,
-      effective: { summary: resolve('summary'), trends: resolve('trends') },
+      effective: { summary: resolve('summary'), trends: resolve('trends'), costTrends: resolve('costTrends') },
     },
   };
 }
