@@ -24,27 +24,32 @@ The dashboard serves as an executive-level financial management, progress simula
 2. **Financial Recalculation Engine** (`/lib/calculations.ts` & `/lib/financial-engine.ts`):
    * Aggregates, filters, and computes margins, POC, MTD, and YTD metrics, writing results to `revenue_wbs`.
 3. **Trend & Revenue Analysis Engine** (`/lib/trends.ts`, surfaced by `components/trend-analysis-panel.tsx`):
-   * A **separate** engine from `calculations.ts`. It recomputes the period-by-period cost and revenue series directly from raw postings, and powers the Trend Analysis tab: the KPI cards (including **In Month Rev**), the four trend charts, cost-element and subcontractor-PO analysis, the **Revenue by WBS & Period matrix**, and the transaction drill-down.
-   * Lives on the **project dashboard** (`/dashboard/[projectId]` → "Trend Analysis" tab), not on `/simulation`.
+   * A **separate** engine from `calculations.ts`. It recomputes the period-by-period cost and revenue series directly from raw postings, and powers the **Revenue Trends** and **Cost Trends** tabs.
+   * **Revenue Trends**: Renders Planned vs Actual vs In Month Revenue metrics, Forecast Revenue curves, and the **Revenue by WBS & Period** matrix.
+   * **Cost Trends**: Renders Planned vs Actual vs In Month Cost metrics, dual concurrent cost trend charts (Cumulative and Periodic side-by-side), the Cost Element Analysis stacked chart, Subcontractor Performance (PO) tracking, and the new **Cost by WBS & Period** matrix.
+   * Lives on the **project dashboard** (`/dashboard/[projectId]` → "Revenue Trends" and "Cost Trends" tabs), not on `/simulation`.
 4. **PM Daily Updates & Simulation** (`/app/(app)/pm-daily-updates`):
    * Enables PMs to log pending material, subcontractor, and manpower costs. These simulate project exposure before they are officially posted in SAP.
+   * **Access control**: Admin and Cost Controller always have access; Project Managers have access to their own projects. Project Managers can also **assign team members** (any user role) to a project via the *Project Team* tab in the project workspace. Assigned users gain access to submit PM updates for that project.
+   * **SAP Posted flag**: Each cost type has its own SAP posting flag (`subcontract_sap_posted`, `manpower_sap_posted`, `material_sap_posted`). Once flagged, that cost component is excluded from all PM-pending calculations, chart overlays, and forecasts. Records are kept for audit history — never deleted.
 5. **Project Master Configuration** (`/app/(app)/projects/[projectId]`):
-   * **WBS Master**: Toggle active status and revenue-generating designations for WBS nodes.
-   * **Cost Element Control**: Include/exclude specific SAP GL cost elements from cost totals.
-   * **Subcontract Packages**: Map subcontractor POs to WBS segments.
-6. **Reporting & Insights**: Reports builder (Excel export + auto-download PDF via `@react-pdf/renderer` with branded cover page, KPI cards, tables, and period-aware filtering), Risk Alerts, Financial Performance (`/simulation`), Source Comparison (`/sap-vs-simulation`), and Comments.
-7. **Dashboard Layout Customization** (`lib/dashboard-widgets.ts`, `lib/dashboard-layout.ts`, `components/dashboard-grid.tsx`): every dashboard visual (~30) can be shown/hidden **and drag-reordered** **reversibly** — nothing deletes code. Two axes: **status** (hide/show) and **order** (drag). Scope is a **global default plus per-project overrides** for both. **Admin-only.** Hide/show: global in *Settings → Dashboard Layout*, per-project via the *"Customize" gear*. Reorder: the *"Edit layout"* drag mode on the dashboard tab bar (uses `@dnd-kit`; **live on both Financial Summary and Trend Analysis tabs**). Layout is **row-based** (`string[][]`): each row is a fixed container — removing/hiding a card makes remaining cards expand within the row, but cards from other rows never flow up. Dragging between rows is explicit in edit mode. Stored as one server-side JSON file (`.local-db/dashboard-layout.json`, backward-compatible with legacy flat arrays via auto-migration); nothing renders differently until an Admin changes something. New widgets auto-append to any saved order.
-8. **Access Control (RBAC)**: Four roles — `Admin` / `Cost Controller` / `Project Manager` / `Viewer` — resolved in `lib/current-user.ts`. Route-level access via `requireRouteAccess(pathname)` in each page server component: Admin = all; Cost Controller = all except Settings; Project Manager = Dashboard + Projects + PM Daily Updates; Viewer = Dashboard + Projects only. Sidebar filters nav items by the same map. `canAccessSettings` is **Admin-only**; `canManageDashboardLayout` is **Admin-only**. Settings is organized into collapsible sub-modules (Dashboard Layout, Company Branding, User Management, System Operations, Danger Zone, Environment Variables, Role Permissions).
+   * 7 tabs: **Summary** (project metadata overview), **WBS Master** (toggle active status and revenue-generating designations), **Cost Elements** (include/exclude SAP GL cost elements), **Manpower** (labor categories and hourly rates per WBS), **Material** (material master items per WBS), **Subcontracts** (PO packages mapping subcontractor work to WBS segments), **Project Team** (assign users to the project).
+   * Editable only by Admin or Cost Controller (`canEditProjectMaster`). PMs and Viewers see a read-only banner. Project Managers who don't own the project get `notFound()` — they cannot view other PMs' project admin workspaces.
+6. **Reporting & Insights**: Reports builder (Excel export + auto-download PDF via `@react-pdf/renderer` with branded cover page, KPI cards, tables, and period-aware filtering), Risk Alerts, Financial Performance (`/simulation` — **cross-project aggregate, no projectId filter**), Source Comparison (`/sap-vs-simulation` — **cross-project aggregate, no projectId filter**, shows Match/Not Match per WBS), Comments, Cost Elements (`/cost-elements?projectId=<id>`, defaults to first project).
+7. **Portfolio Overview** (`/dashboard/portfolio`, `components/portfolio-dashboard.tsx`): A management-facing page that aggregates all projects in one view. Shows 8 KPI cards (total planned revenue, recognized revenue, actual cost, portfolio forecast margin, active project count, on-track count, at-risk count, average margin %), three comparison charts (margin per project, risk donut, revenue vs cost grouped bars), and a card grid with inline KPIs and POC progress bar per project. All figures read directly from pre-stored `revenue_wbs` fields — no independent recalculation. Applies the same WBS master filter as the individual project dashboard. **POC formula**: `recognizedRevenue / plannedRevenue` (matches the project dashboard exactly). Accessible from the sidebar ("Portfolio Overview", between Dashboard and Projects). Role-filtered: PMs see only their own projects; Admin/Cost Controller see all.
+ 8. **Dashboard Layout Customization** (`lib/dashboard-widgets.ts`, `lib/dashboard-layout.ts`, `components/dashboard-grid.tsx`): every dashboard visual (~30) can be shown/hidden **and drag-reordered** **reversibly** — nothing deletes code. Two axes: **status** (hide/show) and **order** (drag). Scope is a **global default plus per-project overrides** for both. **Admin-only.** Hide/show: global in *Settings → Dashboard Layout*, per-project via the *"Customize" gear*. Reorder: the *"Edit layout"* drag mode on the dashboard tab bar (uses `@dnd-kit`; **live on all three tabs: Financial Summary, Revenue Trends, and Cost Trends**). Layout is **row-based** (`string[][]`): each row is a fixed container — removing/hiding a card makes remaining cards expand within the row, but cards from other rows never flow up. Dragging between rows is explicit in edit mode. Stored as one server-side JSON file (`.local-db/dashboard-layout.json`, backward-compatible with legacy flat arrays via auto-migration); nothing renders differently until an Admin changes something. New widgets auto-append to any saved order.
+8. **Access Control (RBAC)**: Four roles — `Admin` / `Cost Controller` / `Project Manager` / `Viewer` — resolved in `lib/current-user.ts`. Route-level access via `requireRouteAccess(pathname)` in each page server component: Admin = all; Cost Controller = all except Settings; Project Manager = Dashboard + Projects + PM Daily Updates; Viewer = Dashboard + Projects + PM Daily Updates (if assigned to a project). Sidebar filters nav items by the same map. `canAccessSettings` is **Admin-only**; `canManageDashboardLayout` is **Admin-only**. `canSubmitPmUpdates(user, project)` governs which projects appear in the PM update form. Settings is organized into collapsible sub-modules (Dashboard Layout, Company Branding, User Management, System Operations, Danger Zone, Environment Variables, Role Permissions).
+9. **Project Team Assignment** (`components/project-team-panel.tsx`, `/api/project-team/[projectId]`): Admin/PM can assign users to a project with a role label (Coordinator, Engineer, Supervisor, Inspector, Planner). Assigned users gain PM Daily Update submission access for that project. Stored in `projects.assigned_users` as a JSONB array.
 
 ---
 
 ## 4. Database Structure
-* **`projects`**: Core project metadata (manager, client, budget codes).
+* **`projects`**: Core project metadata (manager, client, budget codes). Has `assigned_users jsonb` column — run `alter table projects add column if not exists assigned_users jsonb;` in Supabase SQL editor if not yet applied.
 * **`cn41_uploads` & `cn41_rows`**: Baseline WBS items, planned costs, and descriptions.
 * **`gr55_uploads` & `gr55_rows`**: Cost postings with transaction types, amounts, and posting dates.
 * **`sales_order_uploads` & `sales_order_rows`**: Baseline client contract items and planned revenue.
 * **`historical_revenue_uploads` & `historical_revenue_rows`**: Historical pre-2026 revenue records.
-* **`pm_daily_updates`**: Daily logs of simulated field cost items (material, subcontractor, manpower) and their SAP posting status.
+* **`pm_daily_updates`**: Daily logs of simulated field cost items (material, subcontractor, manpower). Per-type posting flags: `subcontract_sap_posted`, `manpower_sap_posted`, `material_sap_posted`. Flagged components are excluded from live calculations but retained for audit history.
 * **`project_wbs_master`**: Overriding rules for active WBS nodes and revenue-generating codes.
 * **`project_cost_element_control`**: Cost element inclusion/exclusion whitelist/blacklist rules.
 * **`revenue_wbs`**: The output table storing pre-calculated WBS-level financial stats (planned cost, actual cost to date, planned revenue, recognized revenue to date, MTD revenue, remaining balance).
@@ -57,17 +62,24 @@ The dashboard serves as an executive-level financial management, progress simula
 ---
 
 ## 5. Main Calculations & Formulas
+
+> **`lib/pm-posting.ts`** is the canonical source for PM pending cost access. Always use `getEffectivePendingCost(update)`, `getMaterialPendingCost(update)`, `getSubcontractPendingCost(update)`, and `getManpowerPendingCost(update)` — these check the per-type SAP posting flags and return 0 for posted components. Never sum raw PM update fields directly.
+
 1. **Management Actual Cost to Date**:
    $$\text{Actual Cost} = \text{SAP Actual Cost} + \text{PM Simulated Pending Costs}$$
-2. **Cost-to-Cost POC%**:
+2. **Cost-to-Cost POC%** (stored in `revenue_wbs.poc_percent`):
    $$\text{POC \%} = \min\left(100\%, \frac{\text{Management Actual Cost}}{\text{Planned Cost}} \times 100\right)$$
 3. **Cumulative Recognized Revenue to Date**:
    $$\text{Recognized Revenue} = \frac{\text{POC \%}}{100} \times \text{Planned Revenue}$$
+   > The dashboard displays POC as `recognizedRevenue / plannedRevenue` — mathematically identical to the cost-to-cost formula above because `recognizedRevenue` is derived from `poc_percent × plannedRevenue`.
 4. **Month-to-Date (MTD) Revenue Recognition (SAP Billing Offset)**:
    $$\text{MTD Recognized Revenue} = \text{Cumulative POC Revenue to Date} - \text{Cumulative Actual SAP Billed Revenue in Previous Months}$$
 5. **Year-to-Date (YTD) Revenue Recognition**:
    $$\text{YTD Recognized Revenue} = \sum (\text{Historical Months Billed Revenue}) + \text{Current Month MTD Recognized Revenue}$$
-6. **Forecast Margin**:
+6. **Forecast Cost** (`lib/calculations.ts`):
+   $$\text{Forecast Cost} = \text{Management Actual Cost to Date}$$
+   > There is no separate forward-looking projection. Forecast cost equals current actual cost — a conservative "no further spending" assumption.
+7. **Forecast Margin**:
    $$\text{Forecast Margin} = \text{Planned Revenue} - \text{Management Actual Cost}$$
 
 ### Two engines compute "in-month revenue" — and they disagree by design
@@ -106,5 +118,14 @@ Two consequences worth internalising:
 * **Recalculate is a full rebuild, never incremental**: it re-reads every raw row, rewrites all of `revenue_wbs`, and deletes/re-inserts `risk_alerts` and `simulation_snapshots`. It also **rewrites planned cost/revenue**, so headline figures can move after a recalculate even with no new upload.
 * **New GR55 cost elements are opt-out, not opt-in**: recalculate auto-inserts any unseen cost element into `project_cost_element_control` with `include_in_cost: true`.
 * **Dashboard-layout drag UI is partially browser-verified** — both tabs render correctly with row-based layout and the API returns proper `string[][]` orders, but the drag interaction itself (Edit layout button → drag handles → Save/Cancel) was not fully exercised by the agent due to auth limitations. An Admin should click-test drag + persistence + per-project isolation on both tabs. (The earlier signed-out-500 bug from a swallowed `redirect()` in `app/(app)/layout.tsx` is now **fixed**.)
-* **The PO filter does not reach the trend charts, the In Month Rev card, or the WBS × Period matrix** — only the drill-down and WBS tables honour it. See `AI_HANDOVER.md` → Open Issues.
+* **The PO filter does not reach the trend charts, the In Month Rev card, or the WBS × Period matrix** — only the drill-down and WBS tables honour it. The Cost Element Analysis PM Pending overlay *does* honour the PO filter (via WBS code derivation from `targetGr55`). See `AI_HANDOVER.md` → Open Issues.
+* **PM Pending is a state snapshot per WBS per period** — if the same WBS has multiple updates in a month, only the latest is used. Summing all entries would inflate pending costs.
+* **Portfolio numbers must match project dashboard** — the portfolio reads pre-stored `revenue_wbs` values and applies the same WBS master filter. POC uses `recognizedRevenue / plannedRevenue` (not `actualCost / plannedCost`). If portfolio numbers diverge from the project dashboard, the most likely cause is a stale `revenue_wbs` table — trigger a Recalculate on the project to resync.
+* **Company name/subtext stored in `localStorage`** — resets on a new browser or device. Cross-device persistence would require storing these in the database.
+* **Logo requires public Supabase bucket + Vercel env vars** — the `cn41-files` bucket must be set to Public in Supabase Storage. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` must be set in Vercel project environment variables and a redeploy triggered (these are inlined at build time).
+* **Supabase migration required for Project Team feature**: `alter table projects add column if not exists assigned_users jsonb;` must be run in the Supabase SQL editor. Until applied, the projects query silently falls back to base columns (the app handles this gracefully via `isMissingProjectExtendedColumnError`).
 * **`.next/` is committed to git** (526 files); `.gitignore` lists only `node_modules`.
+* **`/simulation` and `/sap-vs-simulation` are cross-project aggregate pages** — they read all `revenue_wbs` rows with no `projectId` filter. Any changes to those pages must account for data from all projects being present simultaneously.
+* **`revenue_wbs` legacy alias fields** — `sap_actual_cost`, `sap_planned_cost`, `sap_poc_percent`, `pm_pending_cost`, `simulated_actual_cost`, `simulated_poc_percent`, `simulated_revenue`, `revenue_difference`, `sap_earned_revenue`, `prrevpl000`, `revenue_value` exist as type aliases in `lib/types.ts` from a prior migration. Do not remove them — some pages may still reference them.
+* **Company branding sidebar/login state** — sidebar open/close state in `localStorage` key `sap-cn41-sidebar-open`; company name/subtext in `localStorage` only (reset per browser/device).
+* **`getProjectManagerUsers()` uses Supabase admin client** — service-role key, bypasses RLS. Required because `users_profile` RLS prevents non-admin reads. Any new function that lists users across the system needs the admin client similarly.

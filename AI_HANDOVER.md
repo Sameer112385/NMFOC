@@ -7,11 +7,19 @@ The application is a Next.js 15.5 React application built with TypeScript, style
 * **Storage**: Brand logos (Sidebar and Login page) are uploaded directly into a public Supabase Storage bucket (`cn41-files`), making assets dynamically fetchable.
 * **Pagination & Loading**: A custom paginated Supabase rows fetcher (`lib/supabase/pagination.ts`) is used to fetch datasets exceeding standard REST client caps.
 * **Dual-Mode Data Layer**: Every read in `lib/data.ts` branches on `isLocalDbMode()`. When Supabase env vars are absent the app falls back to `lib/local-db.ts`, a complete JSON-file-backed database used for demos and local scaffolding. Any new data-access function must be implemented on **both** paths.
-* **Auth & RBAC**: Four roles — `Admin` / `Cost Controller` / `Project Manager` / `Viewer` — resolved in `lib/current-user.ts` from the `users_profile` table (falling back to `user_metadata`). Route-level access is enforced by `requireRouteAccess(pathname)` in each page's server component: Admin gets `*`; Cost Controller gets all modules except Settings; Project Manager gets Dashboard + Projects + PM Daily Updates; Viewer gets Dashboard + Projects only. Unauthorized users are redirected to `/dashboard`. `canAccessSettings()` is **Admin-only**. Sidebar navigation (`components/sidebar.tsx`) filters items by the same role→routes map. `canManageDashboardLayout()` (**Admin only**) gates all dashboard-layout editing. In local-db mode a `sap-cn41-demo-session` cookie stands in for a real session.
+* **Auth & RBAC**: Four roles — `Admin` / `Cost Controller` / `Project Manager` / `Viewer` — resolved in `lib/current-user.ts` from the `users_profile` table (falling back to `user_metadata`). Route-level access is enforced by `requireRouteAccess(pathname)` in each page's server component: Admin gets `*`; Cost Controller gets all modules except Settings; Project Manager gets Dashboard + Projects + PM Daily Updates; Viewer gets Dashboard + Projects + PM Daily Updates. Unauthorized users are redirected to `/dashboard`. `canAccessSettings()` is **Admin-only**. Sidebar navigation (`components/sidebar.tsx`) filters items by the same role→routes map. `canManageDashboardLayout()` (**Admin only**) gates all dashboard-layout editing. In local-db mode a `sap-cn41-demo-session` cookie stands in for a real session.
 * **The client never receives raw GR55 rows**: `app/(app)/dashboard/[projectId]/page.tsx` loads `getGr55Summaries()` (the pre-aggregated `gr55_summaries` table), **not** `getGr55Rows()`. A 55k-row raw export collapses to roughly 5–6k summary rows, which is what gets serialized to the browser. `getGr55Rows()` currently has no callers.
 
 ### Page & module map
-Beyond the dashboard: **Reports** (`components/reports-builder.tsx`, Excel export + PDF auto-download via `@react-pdf/renderer`), **Risk Alerts**, **Financial Performance** (`/simulation`), **Source Comparison** (`/sap-vs-simulation`), **Comments**, **Cost Elements**, **Revenue WBS**, and admin backup/reset endpoints. Note the **Trend Analysis panel lives on `/dashboard/[projectId]`** (the "Trend Analysis" tab inside `DashboardClientWorkspace`) — *not* on `/simulation`, despite the name.
+Beyond the dashboard: **Reports** (`components/reports-builder.tsx`, Excel export + PDF auto-download via `@react-pdf/renderer`), **Risk Alerts**, **Financial Performance** (`/simulation`), **Source Comparison** (`/sap-vs-simulation`), **Comments**, **Cost Elements** (`/cost-elements?projectId=<id>` — uses `?projectId=` query param for project switching, defaults to first project), **Revenue WBS**, and admin backup/reset endpoints. Note the **Trend Analysis panel lives on `/dashboard/[projectId]`** (the "Trend Analysis" tab inside `DashboardClientWorkspace`) — *not* on `/simulation`, despite the name.
+
+**`/simulation` and `/sap-vs-simulation` are cross-project aggregate views**: both call `getRevenueRows()` with **no `projectId` filter** — they aggregate WBS rows across all projects. `/simulation` shows the full cross-project financial simulation table; `/sap-vs-simulation` shows a side-by-side comparison (actual vs planned, Match/Not Match badge). Neither page is per-project.
+
+**Project Admin Workspace** (`app/(app)/projects/[projectId]/page.tsx`, `components/project-admin-workspace.tsx`): 7 tabs — `summary`, `wbs-master`, `cost-elements`, `manpower`, `material`, `subcontracts`, `team`. Read-only banner shown for non-`canEditProjectMaster` users (Viewers and Project Managers). `canEditProjectMaster` = Admin or Cost Controller only (defined in `lib/current-user.ts`). **PM access restriction**: `notFound()` is returned for Project Managers who do NOT own the project (checks `project_manager_user_id` and `project_manager_email`). Team members in `assigned_users` are *not* granted project admin access — they only gain PM Daily Update submission access.
+
+**Sidebar/AppShell state**: `components/app-shell.tsx` persists the sidebar open/closed state in `localStorage` key `sap-cn41-sidebar-open`. Sidebar is 272px wide (open) and 72px (collapsed). On mobile it becomes a slide-in overlay.
+
+**Demo mode**: `lib/mock-data.ts` contains `demoProjects` (codes SAP-1001, SAP-1002) used when `sap-cn41-demo-session` cookie is present. `lib/current-user.ts` returns a hardcoded Admin user (`id: 'demo-admin'`, `email: 'admin@local'`, `fullName: 'Sameer Shaikh'`) for this cookie. Demo mode takes priority even when Supabase is configured.
 
 ### PDF Report Generation
 The Reports page (`components/reports-builder.tsx`) generates professional vector PDFs using `@react-pdf/renderer` (`components/pdf-report-document.tsx`). The PDF is rendered entirely client-side and auto-downloads — no print dialog. Features: branded cover page with DETASAD header, teal-themed page headers/footers with page numbers, KPI summary cards, WBS performance table with totals row, subcontractor PO table, risk exceptions, and PM daily site logs. Period-aware: uses `mtd_actual_cost`/`mtd_revenue_recognition` for "This Month", `ytd_*` for "This Year", cumulative `*_to_date` for "All Time". Period filter presets: All Time, This Month, Last 3/6 Months, This Year, Last Year, Custom Range.
@@ -36,16 +44,16 @@ Every dashboard visual can be shown/hidden **and reordered** reversibly — noth
 
 ## 2. Database Schema
 Major operational tables in the Supabase PostgreSQL database:
-* **`projects`**: Project identity, manager assignments, status codes.
+* **`projects`**: Project identity, manager assignments, status codes. Has `assigned_users jsonb` column (added this session — run `alter table projects add column if not exists assigned_users jsonb;` if missing).
 * **`cn41_rows`**: CN41 planned baseline costs by WBS.
 * **`gr55_rows`**: Raw actual cost postings by WBS, GL cost element, and Posting Date.
 * **`sales_order_rows`**: Client billing contract items and planned revenue.
 * **`historical_revenue_rows`**: Pre-2026 actual billed revenues.
-* **`pm_daily_updates`**: Pending material, subcontractor, and manpower costs simulated in the field.
+* **`pm_daily_updates`**: Pending material, subcontractor, and manpower costs simulated in the field. Has per-type SAP posting flags: `subcontract_sap_posted`, `manpower_sap_posted`, `material_sap_posted`. Once any flag is `true`, that cost component is excluded from PM-pending calculations and charts — it is accounted for in GR55.
 * **`gr55_summaries`**: Pre-aggregated GR55 postings, rebuilt by `syncGr55Summaries()` (`lib/financial-engine.ts`) on every upload/recalculate. Grouped by `wbs | po | cost_category | cost_element | business_transaction | month | upload_id`. **This is what the dashboard ships to the browser.**
 * **`project_wbs_master`**: Active state toggle & revenue-generating boolean flags per WBS node.
 * **`project_cost_element_control`**: whitelist/blacklist status per SAP cost element GL.
-* **`revenue_wbs`**: Output summary storage cache, holding the calculated financial health of WBS items (used to feed grids and chart builders).
+* **`revenue_wbs`**: Output summary storage cache, holding the calculated financial health of WBS items (used to feed grids and chart builders). Legacy alias fields retained during migration: `sap_actual_cost`, `sap_planned_cost`, `sap_poc_percent`, `pm_pending_cost`, `simulated_actual_cost`, `simulated_poc_percent`, `simulated_revenue`, `revenue_difference`, `sap_earned_revenue`, `prrevpl000`, `revenue_value` — these are type aliases in `lib/types.ts` and must not be removed.
 * **`users_profile`**: Role and full name per auth user; drives RBAC.
 * **`risk_alerts`**, **`simulation_snapshots`**: Derived outputs; both are deleted and re-inserted wholesale on every recalculate.
 * **`project_subcontracts`**, **`project_manpower_rates`**, **`project_material_master`**, **`comments`**: Supporting master data and collaboration.
@@ -59,6 +67,8 @@ Major operational tables in the Supabase PostgreSQL database:
 * **`/api/pm-updates`**, **`/api/project-wbs-master`**, **`/api/project-cost-elements`**, **`/api/project-subcontracts`**, **`/api/project-masters/*`**: Master-data CRUD; most trigger a recalculate.
 * **`/api/admin/backup`**, **`/api/admin/reset`**, **`/api/admin/users`**: Admin-only; `requireAdminUser()` in `lib/current-user.ts`.
 * **`/api/settings/dashboard-layout` [GET/POST]**: Global dashboard layout (GET open; POST Admin-only). **`/api/dashboard-layout/[projectId]` [GET/POST]**: per-project overrides (GET returns `{ global, project, effective }`; POST Admin-only). Not under `(app)`, so GET is not behind the auth-layout redirect.
+* **`/api/project-team/[projectId]` [POST]**: Save the `assigned_users` array on a project. Allowed for Admin, Cost Controller, and Project Manager roles. Body: `{ assigned_users: ProjectTeamMember[] }`.
+* **`/api/admin/users` [GET]**: Returns all users from `users_profile`. Uses the **Supabase admin client** (`createSupabaseAdminClient`, a service-role client bypassing RLS). `getProjectManagerUsers()` in `lib/data.ts` also uses the admin client to list PM-role users for the team-assignment dropdown.
 
 **What Recalculate actually does** (`recalculate/route.ts`) — a full rebuild, never incremental:
 1. Resolves the latest `is_latest = true` upload for CN41 / GR55 / Sales Orders (historical revenue and PM updates are fetched project-wide, not per upload).
@@ -83,80 +93,119 @@ Note the uploader **clears previous rows** for the source it replaces, so `gr55_
 8. **The 2026-01 boundary**: Revenue before `2026-01` is read from `historical_revenue_rows`; from `2026-01` onward it comes from GR55. This cutover is hardcoded in `lib/calculations.ts`, `lib/trends.ts`, and `components/dashboard-wbs-filter.tsx`.
 9. **Two engines, two answers**: `lib/calculations.ts` writes `revenue_wbs.mtd_revenue_recognition` (per-WBS, each row using *its own* latest posting date as the period). `lib/trends.ts` computes the Trend panel's "In Month Rev" card independently from raw postings using one project-wide period. **These do not agree and are not expected to.** The card is `buildTrendData`'s output, not `revenue_wbs`.
 10. **`TrendDataPoint.wbsRevenue` invariant**: `sum(wbsRevenue.values()) === recognizedRevenue === forecastRevenue` for every period. A dev-only assert in `lib/trends.ts` warns on violation. Any change to the revenue branch must preserve this — it is what makes the WBS × Period matrix tie to the card.
+11. **PM Pending = unposted only**: Any PM update component whose SAP-posting flag is `true` (`subcontract_sap_posted`, `manpower_sap_posted`, `material_sap_posted`) is excluded from all PM-pending totals, forecasts, and the Cost Element Analysis PM overlay. Posted records are kept in the database for audit/history but have zero impact on live calculations.
+12. **PM Pending is a state snapshot, not incremental**: If the same WBS has multiple daily updates in a month, only the **latest update per WBS per period** is used. Summing all entries would inflate the pending cost proportionally to how many days updates were submitted.
+13. **`lib/pm-posting.ts` — canonical SAP-posting-aware cost accessors**: Use these functions to get PM pending costs; never sum the raw fields directly. Key exports:
+    * `getEffectivePendingCost(update)` — sums all non-SAP-posted cost components (material + subcontract + manpower)
+    * `getMaterialPendingCost(update)` — returns material pending cost if `material_sap_posted !== true`, else 0
+    * `getSubcontractPendingCost(update)` — same for subcontract (checks `subcontract_sap_posted`)
+    * `getManpowerPendingCost(update)` — same for manpower (checks `manpower_sap_posted`)
+    * `buildRevenueSimulationPatch(update)` — used by the `/simulation` page's legacy simulation view
+14. **`forecast_cost = managementActualCostToDate`** (`lib/calculations.ts` line 148): there is no separate forward-looking forecast model. Forecast cost is set equal to the current actual cost — a conservative assumption meaning the project won't spend any more than it already has. `forecast_margin = plannedRevenue - managementActualCostToDate`.
+15. **POC formula dual representation**: The stored `poc_percent` in `revenue_wbs` is computed as `managementActualCostToDate / plannedCost` (cost-to-cost method, `lib/calculations.ts`). The dashboard displays `recognizedRevenue / plannedRevenue` which is mathematically equivalent because `recognized_revenue_to_date = (poc_percent / 100) * plannedRevenue`. Both expressions yield the same percentage. The **Portfolio Overview uses `recognizedRevenue / plannedRevenue`** — the same formula as `dashboard-client-workspace.tsx` line 233.
 
 ---
 
-## 5. Files Modified Today & Recently
+## 5. Files Modified in This Session
 
-### Latest session — RBAC, PDF generation, period filters, branding
+### Portfolio Overview page (`/dashboard/portfolio`)
+* **`app/(app)/dashboard/portfolio/page.tsx`** (NEW) — Server component. Fetches all visible projects (PM-filtered), then for each fetches `getRevenueGeneratingRows`, `getRevenueRows`, `getProjectWbsMaster`, and `getLatestUploadDate` in parallel. Applies the **exact same WBS master filter** as the project dashboard (`is_active !== false && include_in_cost !== false`) before summing cost rows. All figures are read directly from pre-stored `revenue_wbs` fields — no re-derivation. POC = `recognizedRevenue / plannedRevenue` (identical formula to `dashboard-client-workspace.tsx` line 233). `forecast_margin` and all revenue fields summed from `revenue_wbs` directly.
+* **`components/portfolio-dashboard.tsx`** (NEW) — Client component. Renders:
+  * 8 KPI cards (2 rows): Total Planned Revenue, Recognized Revenue, Actual Cost, Portfolio Forecast Margin, Active Projects count, On Track, At Risk, Average Margin %.
+  * **Project Forecast Margin bar chart** — sortable by Margin / Actual Cost / Revenue / POC % via toggle buttons; at-risk projects render in red.
+  * **Risk Status donut chart** — Safe vs At Risk breakdown.
+  * **Revenue vs Actual Cost grouped bar chart** — planned revenue vs actual cost per project side by side.
+  * **Project cards grid** — 2–3 col responsive, each card shows Recognized Revenue, Actual Cost, POC%, Forecast Margin, a POC progress bar, risk badge, and "Open dashboard" link to `/dashboard/[projectId]`.
+* **`components/sidebar.tsx`** — Added `Layers` icon import; added "Portfolio Overview" nav item linking to `/dashboard/portfolio` between Dashboard and Projects.
+* **`lib/current-user.ts`** — Added `/dashboard/portfolio` to Cost Controller, Project Manager, and Viewer allowlists (belt-and-suspenders; `/dashboard` prefix already grants access via `startsWith` matching).
+
+### POC formula — critical finding
+The dashboard POC card (`summary.card.pocPercent`) computes: `recognizedRevenue / plannedRevenue * 100` — **not** `actualCost / plannedCost`. Using `actualCost / plannedCost` in the portfolio produced different (wrong) numbers. The portfolio now uses the correct formula matching the dashboard exactly.
+
+### Company logo not showing on Vercel (diagnosis & fix)
+* **Root cause**: `NEXT_PUBLIC_SUPABASE_URL` was not set in Vercel environment variables. Without it, the sidebar and login page client components build an empty logo URL and fall back to the initial letter placeholder. The `cn41-files` bucket also needed to be set to **Public** in Supabase Storage settings.
+* **Fix applied (by user)**: Set bucket to Public in Supabase Storage dashboard; add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Vercel project → Settings → Environment Variables, then redeploy (these vars are inlined at build time).
+* **Note**: Company name/subtext are stored in `localStorage` — they reset to defaults on a new device/browser. If cross-device persistence is needed, store them in the database instead.
+
+### Per-project team assignment for PM Daily Updates
+* **`lib/types.ts`** — Added `ProjectTeamMember` type (`{ user_id, email, full_name, role_label }`) and `assigned_users?: ProjectTeamMember[] | null` field to `Project` type.
+* **`lib/data.ts`** — Added `assigned_users` to `PROJECT_SELECT_EXTENDED` query string. Added `'assigned_users'` to `isMissingProjectExtendedColumnError` so a missing column gracefully falls back to `PROJECT_SELECT_BASE` (this was the **root cause** of the blank Projects page when Supabase didn't have the column yet).
+* **`lib/current-user.ts`** — Added `canSubmitPmUpdates(user, project)` helper: returns `true` for Admin/Cost Controller, or if the user is the project PM (by id or email), or if the user appears in `assigned_users`. Also added `/pm-daily-updates` to the Viewer route allowlist so assigned Viewers can access the page.
+* **`lib/local-db.ts`** — `updateProject` already handles `assigned_users` (JSONB stored as-is in JSON file).
+* **`components/project-team-panel.tsx`** (NEW) — Panel UI: lists current members with role labels, role-change dropdown, remove button. Dropdown to add users from `users_profile` (fetches `/api/admin/users`). Saves via POST to `/api/project-team/[projectId]`. Shows only to users with `canEdit`.
+* **`components/project-admin-workspace.tsx`** — Added `ProjectTeamPanel` import and "Project Team" tab (renders `<ProjectTeamPanel>` when active).
+* **`app/api/project-team/[projectId]/route.ts`** (NEW) — POST endpoint; allowed for Admin/Cost Controller/Project Manager. Updates `projects.assigned_users` via Supabase admin client or `updateProject` in local-db mode.
+* **`app/(app)/pm-daily-updates/page.tsx`** — Imports `canSubmitPmUpdates`; filters `projects`, `revenueWbs`, `manpowerRates`, `materialMasters`, `projectSubcontracts` to only those accessible to the current user before passing to `PMUpdateForm`.
+* **`supabase/manual-setup.sql`** — Added `alter table if exists projects add column if not exists assigned_users jsonb;` migration.
+
+### Cost Element Analysis — PM Pending overlay
+* **`components/trend-analysis-panel.tsx`** — `categoryTrendData` memo extended to compute PM pending per period alongside GR55 SAP actuals:
+  * Builds `allowedWbsCodes` from the already-filtered `targetGr55` set — when a PO or WBS filter is active, PM updates are restricted to only those WBS codes (PM updates have no PO field, so WBS derivation from filtered GR55 is the bridge).
+  * `getPmAmount(up)` respects per-type posting flags: skips `pending_subcontractor_cost` if `subcontract_sap_posted`, etc.
+  * Takes the **latest update per WBS per period** (pending is a state snapshot, not an increment).
+  * PM Pending renders as a separate stacked bar segment with 35% opacity fill + dashed stroke — visually distinct from SAP actuals.
+  * Appears in the Cost Category Consumption Ranking as a lighter entry.
+  * Label pattern: `"Subcontractor (PM Pending)"`, `"Manpower (PM Pending)"`, etc.
+  * Added `costRows` to the memo's dependency array (used for `wbsIdToCode` mapping).
+
+### Subcontractor PO filter — popover stays open
+* **`components/trend-analysis-panel.tsx`** — Fixed the `isTrendVisible` check: removed `selectedPos.length === 1` from the condition that hid the Subcontractor Performance section. Now the section (and its PO dropdown) stays visible at all times when in subcontractor view, regardless of how many POs are filtered.
+
+### Column filter popover — stays open on click/type
+* **`components/trend-analysis-panel.tsx`** — Fixed `ColumnFilterButton` and `WbsColumnFilter` scroll listener: `onScroll` now checks `popRef.current?.contains(e.target as Node)` and skips closing if the scroll originates inside the popover. Previously, clicking a checkbox or focusing an input could trigger a micro-scroll that fired `setOpen(false)`.
+
+### Projects blank page fix (Supabase mode)
+* **`lib/data.ts`** — Root cause: `PROJECT_SELECT_EXTENDED` included `assigned_users` which didn't exist in Supabase yet → query failed → silent `return []`. Fix: added `'assigned_users'` to `isMissingProjectExtendedColumnError` so the fallback query runs correctly until the migration is applied.
+
+---
+
+## 6. Files Modified Previously (still relevant)
+
+### Latest prior session — RBAC, PDF generation, period filters, branding
 New: `components/pdf-report-document.tsx` (professional `@react-pdf/renderer` PDF document with cover page, branded headers/footers, KPI cards, tables with totals, risk alerts, PM site logs). Deps: `@react-pdf/renderer`.
-Changed: `lib/current-user.ts` (+`AppRole` type, `ALLOWED_ROUTES` map with 4 roles, `getAllowedRoutes()`, `canAccessRoute()`, `requireRouteAccess()`, `canAccessSettings()` now Admin-only). `components/sidebar.tsx` (nav filtering by role→routes map). 10 page server components (added `requireRouteAccess()` guard: upload-cn41, reports, simulation, sap-vs-simulation, risk-alerts, comments, pm-daily-updates, revenue-wbs, cost-elements, settings). `components/reports-builder.tsx` (replaced `window.print()` with `@react-pdf/renderer` auto-download; added period filter with 7 presets; period-aware cost/revenue field switching using MTD/YTD/cumulative fields; removed html2canvas/jsPDF). `components/trend-analysis-panel.tsx` (KPI card number alignment fix — flex column + grow spacer). `app/layout.tsx` (title → "Detasad Project Dashboard"). `components/print-report-layout.tsx` (NMFOC → Detasad Projects Dashboard). `components/pdf-report-document.tsx` (all references → Detasad Projects Dashboard).
+Changed: `lib/current-user.ts` (+`AppRole` type, `ALLOWED_ROUTES` map with 4 roles, `getAllowedRoutes()`, `canAccessRoute()`, `requireRouteAccess()`, `canAccessSettings()` now Admin-only). `components/sidebar.tsx` (nav filtering by role→routes map). 10 page server components (added `requireRouteAccess()` guard: upload-cn41, reports, simulation, sap-vs-simulation, risk-alerts, comments, pm-daily-updates, revenue-wbs, cost-elements, settings). `components/reports-builder.tsx` (replaced `window.print()` with `@react-pdf/renderer` auto-download; added period filter with 7 presets; period-aware cost/revenue field switching using MTD/YTD/cumulative fields; removed html2canvas/jsPDF). `components/trend-analysis-panel.tsx` (KPI card number alignment fix — flex column + grow spacer). `app/layout.tsx` (title → "Detasad Project Dashboard"). `components/print-report-layout.tsx` (NMFOC → Detasad Projects Dashboard). `components/pdf-report-document.tsx` (all references → Detasad Projects Dashboard). `app/(auth)/login/page.tsx` (removed Supabase settings panel; added small connection status dot indicator at bottom of login card).
 
-### Earlier session — Row-based layout + drag reorder (both tabs)
+### Row-based layout + drag reorder (both tabs)
 New: `components/dashboard-grid.tsx` (reusable row-based grid, view/edit-mode dnd with cross-row drag). Deps: `@dnd-kit/core|sortable|modifiers|utilities`.
-Changed: `lib/dashboard-widgets.ts` (+`span`, `SPAN_CLASS`, `defaultOrder`, `defaultRowLayout`, `flatOrderToRows`, `getWidget`), `lib/dashboard-layout.ts` (rewritten for row-based `string[][]` order — `TabRowOrder`, `sanitizeRowsForStore`, `completeRows`, `rowsEqual`, `getEffectiveRowOrder`, `saveProjectRowOrder`; legacy flat wrappers kept), both dashboard-layout API routes (accept/return `string[][]` order), `app/(app)/dashboard/[projectId]/page.tsx` (resolve + pass `summaryOrder`/`trendsOrder` as `string[][]`), `components/dashboard-client-workspace.tsx` (Summary tab → `renderSummaryWidget(id)` + `DashboardGrid` + Edit-layout mode on both tabs; "Edit layout" button tab-aware; YTD IIFE lifted to a memo), `components/trend-analysis-panel.tsx` (fully row-driven: `renderTrendWidget(id)` switch, `DashboardGrid` with `rows`, `editingLayout`/`setEditingLayout` props, edit mode with `editTrendRows`/`startEditTrends`/`saveTrendLayout`). Commits: `a94bf09` (checkpoint), `4006cdf`–`a2aeb8f`.
-Also this session (committed): PM WBS dropdown `noTruncate` (`dark-select.tsx`, `pm-update-form.tsx`); Material Master search (`project-master-admin-panel.tsx`); PM "Submitted by" auto-fill from current user (`pm-update-form.tsx`, `pm-daily-updates/page.tsx`); Trend Filters z-index fix (dropdown was behind Cost Element card); clickable WBS → actual-cost drill-down in the Revenue-by-WBS matrix; removed duplicate Project Cost Masters from the dashboard; Settings full-width.
+Changed: `lib/dashboard-widgets.ts` (+`span`, `SPAN_CLASS`, `defaultOrder`, `defaultRowLayout`, `flatOrderToRows`, `getWidget`), `lib/dashboard-layout.ts` (rewritten for row-based `string[][]` order — `TabRowOrder`, `sanitizeRowsForStore`, `completeRows`, `rowsEqual`, `getEffectiveRowOrder`, `saveProjectRowOrder`; legacy flat wrappers kept), both dashboard-layout API routes, `app/(app)/dashboard/[projectId]/page.tsx` (resolve + pass `summaryOrder`/`trendsOrder` as `string[][]`), `components/dashboard-client-workspace.tsx` (Summary tab → `renderSummaryWidget(id)` + `DashboardGrid` + Edit-layout mode on both tabs), `components/trend-analysis-panel.tsx` (fully row-driven: `renderTrendWidget(id)` switch, `DashboardGrid` with `rows`, edit mode with `editTrendRows`/`startEditTrends`/`saveTrendLayout`).
 
-### Earlier session — Dashboard widget layout (show/hide) + per-project overrides
-New files: `lib/dashboard-widgets.ts` (registry + `isWidgetHidden`), `lib/dashboard-layout.ts` (file store: global + per-project, flat-file migration), `components/dashboard-layout-panel.tsx` (global editor), `components/dashboard-customize-panel.tsx` (per-project gear editor), `components/settings-section.tsx` (collapsible sub-module), `app/api/settings/dashboard-layout/route.ts`, `app/api/dashboard-layout/[projectId]/route.ts`.
-Changed: `app/(app)/dashboard/[projectId]/page.tsx` (reads effective layout, passes `dashboardLayout` + `canCustomize`), `components/dashboard-client-workspace.tsx` and `components/trend-analysis-panel.tsx` (gate ~30 visuals via `show(id)`; workspace hosts the Customize gear), `app/(app)/settings/page.tsx` (reorganized into `SettingsSection` accordions; Dashboard Layout section Admin-only), `lib/current-user.ts` (added `canManageDashboardLayout` = Admin-only), and the 4 existing settings panels (`company-logo-panel`, `supabase-connection-panel`, `user-management-panel`, `admin-reset-panel`) had their outer card + title stripped to render header-less inside sections. Also fixed `app/(app)/layout.tsx` (the swallowed `redirect()`). Baseline tag `dashboard-baseline-2026-07` marks the pre-change dashboard.
-
-**Gotcha for the next dev:** the registry gate is fail-safe — a wrong/typo'd `show('...')` id resolves to *visible*, never hidden. Default (no layout file) = everything shown, so the whole system is a no-op until an Admin hides something.
-
-### Earlier session — Revenue by WBS & Period matrix
-* **[trends.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/trends.ts)**:
-  * `TrendDataPoint` gained a required **`wbsRevenue: Map<string, number>`** field — the per-WBS decomposition of each period's revenue, keyed by normalized WBS code. The engine already computed this per-WBS detail and discarded it; it is now retained rather than recalculated, which is what guarantees the matrix ties to the card.
-  * `normalizeCode()` is now **exported** so consumers join rows on the identical rule.
-  * `getPostedRevenueForPeriod()` was rewritten: it previously re-filtered *every* GR55 row once per period (O(periods × rows) — ~37 full scans at monthly granularity). It now reads a `Map<period, Map<wbs, amount>>` built in a **single pass**. Net performance improvement.
-  * Postings roll up to the longest matching active WBS prefix, **falling back to the raw normalized code**. That fallback is load-bearing: it guarantees no posting is dropped, which is what keeps the invariant true.
-  * Added a dev-only assert that the per-WBS breakdown partitions each period's total.
-* **[trend-analysis-panel.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/trend-analysis-panel.tsx)**: New **"Revenue by WBS & Period"** section (rows = WBS, columns = periods) between the Subcontractor PO card and the Drill-Down table. Inherits the panel's existing WBS / Interval / Start–End filters, so quarter and year views work for free. Adds a `"Revenue by WBS & Period"` sheet to the existing Export Excel button (built with `aoa_to_sheet`, since the period columns are dynamic).
-
-**Layout constraints discovered the hard way — do not regress these:**
-* The panel's filter bar is `sticky top-[138px] z-10` at **page** level. Any card containing sticky cells must carry `relative z-0` to create its own stacking context, or its `z-20`/`z-30` cells will paint *over* the filter bar.
-* Never put `sticky` + `z-index` on `<thead>`/`<tfoot>`: a positioned `thead` creates a stacking context that traps its own corner cell beneath the body's sticky column. Sticky and z-index belong on the **cells**. Layering used: body-left `z-10` < header/footer `z-20` < corners `z-30`.
-* Sticky cells need **fully opaque** backgrounds (`bg-panel` / `bg-panel2`). Translucent utilities like `bg-accent/10` let scrolling columns ghost through.
-* Use `border-separate border-spacing-0`, not `border-collapse`: collapsed borders detach from sticky cells and scroll away. Consequently row rules live on cells, not on `<tr>` (a border on `<tr>` only paints under `border-collapse`).
-* Runtime-computed widths must be an **inline style**. Tailwind cannot JIT `min-w-[${n}px]` and the table silently collapses.
-
-### Earlier sessions
-* **[pagination.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/supabase/pagination.ts)**: Enforced strict `.order('id', { ascending: true })` constraints on paginated database queries to make pagination stable and prevent PostgreSQL arbitrary row ordering fluctuations.
-* **[recalculate/route.ts](file:///d:/Antigravity/NMFOC%20Dashboard/app/api/financial-sources/recalculate/route.ts)** & **[pm-updates/route.ts](file:///d:/Antigravity/NMFOC%20Dashboard/app/api/pm-updates/route.ts)**: Queried and passed `historicalRevenueRows` to the calculations engine so that the pre-2026 baseline is not wiped out on recalculations or simulated updates.
-* **[dashboard-client-workspace.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/dashboard-client-workspace.tsx)**: Passed `historicalRevenueRows` to the trend builder hook (`buildTrendData`) so that the dashboard charts correctly establish the historical baseline.
-* **[financial-imports.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/financial-imports.ts)**: Replaced `toISOString()` with local date component extraction in `toIsoDate` to stop timezone drift.
-* **[calculations.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/calculations.ts)**: Standardized MTD and YTD calculations on the SAP billing offset formula to match trend metrics.
-* **[trends.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/trends.ts)**: Restored trend analysis to use the original historical sum of postings vs current month POC delta method.
-* **[utils.ts](file:///d:/Antigravity/NMFOC%20Dashboard/lib/utils.ts)**: Fixed standard and compact currency functions to print `SAR ` instead of `₼`.
-* **[dashboard-wbs-filter.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/dashboard-wbs-filter.tsx)**: Added Month Selector dropdown, sticky summary footer, and aligned client recalculations with billing offset formula.
-* **[company-logo-panel.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/company-logo-panel.tsx)**: Created branding inputs and uploader panels for sidebar and login logos.
-* **[settings/page.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/app/(app)/settings/page.tsx)**: Integrated `<CompanyLogoPanel />` into settings.
-* **[sidebar.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/sidebar.tsx)**: Made header dynamic, logo size `w-12 h-12` (48px), and text size `17px` for high-visibility branding.
-* **[login/page.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/app/(auth)/login/page.tsx)**: Integrated dynamic login banner/logo URLs and set header text color to `#005B7F`.
-* **[cn41-upload-form.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/cn41-upload-form.tsx)**, **[project-admin-details-form.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/project-admin-details-form.tsx)**, **[project-wbs-master-panel.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/project-wbs-master-panel.tsx)**, **[project-cost-element-control-panel.tsx](file:///d:/Antigravity/NMFOC%20Dashboard/components/project-cost-element-control-panel.tsx)**: Changed `router.refresh()` to `window.location.reload()` on recalculate to push data changes instantly.
+### Splitting Trend Analysis into Revenue Trends and Cost Trends tabs
+Changed:
+* **`lib/trends.ts`**: Updated `TrendDataPoint` type and `buildTrendData` calculation engine to compute and store per-WBS periodic costs (`wbsCost`) alongside revenue.
+* **`lib/dashboard-widgets.ts`**: Registered the new `'costTrends'` tab and configured all its widgets (`costTrends.kpis`, `costTrends.chart.costTrendCumulative`, `costTrends.chart.costTrendPeriod`, `costTrends.section.costElementAnalysis`, `costTrends.section.subcontractorPo`, `costTrends.section.costByWbsMatrix`, `costTrends.section.drilldown`). Refocused `trends` (Revenue Trends) widgets entirely on revenue.
+* **`lib/dashboard-layout.ts`**: Updated order deserialization and layout sanitizers to recognize and save `'costTrends'` layouts.
+* **`app/(app)/dashboard/[projectId]/page.tsx`**: Resolved `costTrendsOrder` layout server-side and passed it down to the UI.
+* **`app/api/dashboard-layout/[projectId]/route.ts`** & **`app/api/settings/dashboard-layout/route.ts`**: Handled layout saving/validation checks for `'costTrends'`.
+* **`components/dashboard-client-workspace.tsx`**: Added a new tab button "Cost Trends", renamed "Trend Analysis" to "Revenue Trends", and structured reordering capabilities and layout states for all three tabs.
+* **`components/trend-analysis-panel.tsx`**: Added support for `mode: "revenue" | "cost"`. Implemented two concurrent cost charts (Cumulative and Period side-by-side) without toggles, custom KPI card subsets per mode, and a new Cost by WBS & Period matrix leveraging the `wbsCost` dataset.
 
 ---
 
-## 6. Open Issues
+## 7. Open Issues
 
 ### Code bugs
-* ~~Signed-out users get "Internal Server Error" instead of the login page~~ **FIXED** (`app/(app)/layout.tsx`): the `redirect('/login')` was inside a `try/catch` that swallowed the `NEXT_REDIRECT` throw, so the request 500'd. Now the session is computed inside the `try` (tolerating Supabase outages) and `redirect()` is called outside it. Verified: signed-out `/dashboard` → 307 `/login`.
 * **`selectedPos` is not passed to `baseTrendData`** (`components/trend-analysis-panel.tsx`): `buildTrendData` accepts `selectedPos`, and `dashboard-client-workspace.tsx` *does* pass it — but the Trend panel does not. So the trend charts, the In Month Rev card, and the WBS × Period matrix are all **PO-blind**, while `filteredWbsRows` and the drill-down table honour the PO filter. With a PO selected, the card and the drill-down describe different populations. Fixing this **will move the card's number**, so it needs its own verification pass.
 * **`getProjectWbsMaster()` does not paginate** (`lib/data.ts`): plain `select` capped at Supabase's default 1000 rows. It would silently truncate above 1000 WBS codes, and that map drives the cost-WBS filter.
-* **`revenue_wbs.reporting_period` drifts per WBS**: each row's period is derived from *that WBS's own* latest posting date, so a project's rows can span many different months (currently 12 distinct values plus 30 nulls). Summing `mtd_revenue_recognition` across them adds different months together. The trends engine does not have this problem (one project-wide period).
+* **`revenue_wbs.reporting_period` drifts per WBS**: each row's period is derived from *that WBS's own* latest posting date, so a project's rows can span many different months. Summing `mtd_revenue_recognition` across them adds different months together. The trends engine does not have this problem (one project-wide period).
 * **`getGr55Rows()` is dead code** (`lib/data.ts`): no callers. Either delete it or find out which page regressed to summaries.
 
 ### Operational
 * **Ingestion Timeouts**: Uploading massive GR55 exports (50,000+ rows) can take up to 25–30 seconds. On standard serverless runtimes (like Vercel), this may occasionally exceed HTTP execution timeout boundaries (10–15s), yielding a gateway error in the browser while the insertions continue processing in the database background.
-* **`.next/` is committed to git** — 526 build-artifact files are tracked, and `.gitignore` contains only `node_modules`. This produces constant diff noise and makes a corrupted dev build awkward to clear. Recommended: add `.next` to `.gitignore` and `git rm -r --cached .next`.
+* **`.next/` is committed to git** — 526 build-artifact files are tracked, and `.gitignore` contains only `node_modules`. Recommended: add `.next` to `.gitignore` and `git rm -r --cached .next`.
+* **Supabase migration required**: Run `alter table if exists projects add column if not exists assigned_users jsonb;` in the Supabase SQL editor if projects are not showing (the app now gracefully falls back to `PROJECT_SELECT_BASE` if the column is missing, but the Project Team feature requires it).
 
 ### Data quality (SEC NG NMFOC Jeddah)
-* **WBS `SIS-NGS.FOC.W.JD.00421` has a planned cost of 1.00 SAR** against 863,466.46 of planned revenue. Its 0.41 SAR of actual cost yields a 41% POC and **354,021.25 of recognized revenue** off a sub-riyal posting. This single row is larger than the entire In Month Rev figure — because that card is a *residual*, a bad planned-cost baseline passes straight to the bottom line undiluted. Verify the CN41 source for this WBS.
+* **WBS `SIS-NGS.FOC.W.JD.00421` has a planned cost of 1.00 SAR** against 863,466.46 of planned revenue. Its 0.41 SAR of actual cost yields a 41% POC and **354,021.25 of recognized revenue** off a sub-riyal posting. This single row is larger than the entire In Month Rev figure. Verify the CN41 source for this WBS.
 * Roughly half the revenue-generating WBS trip at least one baseline check (planned cost suspiciously low, POC capped because actual exceeded plan, or barely-started at <5%).
 
 ---
 
-## 7. Next Recommended Tasks
-1. **Browser-verify the dashboard-layout UI as an Admin** — storage + both APIs are curl-verified (migration, inheritance, project-override-wins, order reverse/sanitize/append, 403 for non-admins), but the authenticated drag UI was never fully exercised by the agent (login limitation). Confirm: drag works cross-row on **both** Summary and Trends tabs, Save persists, per-project order is isolated, Cancel reverts, non-Admin sees no Edit button.
-2. **Finish the pre-aggregation migration** *(partially done)*: `syncGr55Summaries()` already exists and the **dashboard already reads `gr55_summaries`**. What remains is the calculation path — `app/api/financial-sources/recalculate/route.ts` and `lib/financial-engine.ts` still read raw `gr55_rows`. Verified equivalent: `buildTrendData` produces **identical** results from `gr55_summaries` and raw `gr55_rows`, so the summaries preserve the amounts at month granularity.
-3. **Excel Ingestion Progress Bar**: Add client-side chunking/progress feedback to the uploader component.
-4. **Consider deriving the reporting period project-wide** rather than per-WBS in `lib/calculations.ts`, so `revenue_wbs` stops mixing months (see Open Issues).
+## 8. Next Recommended Tasks
+1. **Run Supabase migration** — execute `alter table if exists projects add column if not exists assigned_users jsonb;` in the SQL editor to fully enable the Project Team feature.
+2. **Browser-verify Portfolio Overview** — log in as Admin on Vercel, click "Portfolio Overview" in sidebar, confirm all KPI numbers match the individual project dashboards exactly (especially POC % and Forecast Margin).
+3. **Browser-verify the dashboard-layout UI as an Admin** — storage + both APIs are curl-verified, but the authenticated drag UI was never fully exercised by the agent (login limitation). Confirm: drag works cross-row on **both** Summary and Trends tabs, Save persists, per-project order is isolated, Cancel reverts, non-Admin sees no Edit button.
+4. **Browser-verify Project Team panel** — go to a project → Project Detail → "Project Team" tab, assign a Coordinator/Engineer user, verify they appear in the PM Daily Updates project dropdown.
+5. **Fix PO filter blind spot in trend charts** — pass `selectedPos` into `buildTrendData` inside `TrendAnalysisPanel` so the In Month Rev card, trend charts, and WBS × Period matrix all honour the PO filter (note: this will move card numbers, so verify carefully).
+6. **Company name/subtext cross-device persistence** — currently stored in `localStorage` only; resets on new browser/device. Store in database if management wants consistent branding across all users.
+7. **Finish the pre-aggregation migration** *(partially done)*: `syncGr55Summaries()` already exists and the **dashboard already reads `gr55_summaries`**. The calculation path (`recalculate/route.ts`, `lib/financial-engine.ts`) still reads raw `gr55_rows`.
+8. **Consider deriving the reporting period project-wide** rather than per-WBS in `lib/calculations.ts`, so `revenue_wbs` stops mixing months.
