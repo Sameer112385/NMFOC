@@ -309,11 +309,11 @@ export function DashboardClientWorkspace({
       case "summary.card.plannedCost":
         return <StatCard title="Planned Cost" value={formatCurrency(plannedCost)} icon={Briefcase} tone="accent" group="cost" />;
       case "summary.card.mgmtActualCost":
-        return <StatCard title="Management Actual Cost" value={formatCurrency(actualCost)} icon={Coins} tone="accent" group="cost" hint="GR55 actual + active PM simulated cost" />;
+        return <StatCard title="Actual Cost" value={formatCurrency(actualCost)} icon={Coins} tone="accent" group="cost" hint="SAP Posted Cost + PM Simulated Cost" />;
       case "summary.card.plannedRevenue":
         return <StatCard title="Planned Revenue" value={formatCurrency(plannedRevenue)} icon={DollarSign} tone="success" group="revenue" />;
       case "summary.card.recognizedRevenue":
-        return <StatCard title="Recognized Revenue" value={formatCurrency(recognizedRevenue)} icon={TrendingUp} tone="success" group="revenue" hint="Pre-2026: Historical | 2026+: GR55 actuals | Current: POC" />;
+        return <StatCard title="Recognized Revenue" value={formatCurrency(recognizedRevenue)} icon={TrendingUp} tone="success" group="revenue" hint="Combined Revenue of All Revenue-Generating WBS" />;
       case "summary.card.forecastMargin":
         return <StatCard title="Forecast Margin" value={formatCurrency(forecastMargin)} icon={Percent} tone={forecastMargin >= 0 ? "success" : "danger"} group="margin" />;
       case "summary.card.pocPercent":
@@ -392,7 +392,7 @@ export function DashboardClientWorkspace({
       case "summary.chart.revenueSplit":
         return <RevenueSplitChart recognized={recognizedRevenue} remaining={Math.max(0, remainingRevenue)} total={plannedRevenue} />;
       case "summary.chart.pocByWbs":
-        return <PocChart data={filteredCostRows.map((row) => ({ name: row.wbs_code, value: row.poc_percent }))} />;
+        return <PocChart data={filteredRevenueRows.map((row) => ({ code: row.wbs_code, name: row.wbs_description || row.wbs_code, revenue: row.recognized_revenue_to_date, poc: row.poc_percent }))} />;
       case "summary.chart.revenueVsSimulation":
         return <RevenueVsSimulationChart data={filteredRevenueRows.map((row) => ({ name: row.wbs_code, sap: row.sap_earned_revenue ?? 0, simulated: row.recognized_revenue_to_date }))} />;
       case "summary.chart.costComparison":
@@ -420,18 +420,6 @@ export function DashboardClientWorkspace({
                 projectWbsMaster={projectWbsMaster}
                 costElementControl={costElementControl}
               />
-            </div>
-          </div>
-        );
-      case "summary.panel.projectDetails":
-        return (
-          <div className="surface-card h-full p-6">
-            <h3 className="text-base font-semibold text-text">Project Details</h3>
-            <div className="mt-4 space-y-1">
-              <StatRow label="Project Code" value={project.project_code} />
-              <StatRow label="Client" value={project.client_name ?? "-"} />
-              <StatRow label="Current Status" value={project.status ?? "Active"} />
-              <StatRow label="Daily PM Updates" value={String(updates.length)} />
             </div>
           </div>
         );
@@ -539,9 +527,9 @@ export function DashboardClientWorkspace({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Sticky Tab Selector (Hidden on Print) */}
-      <div className="no-print sticky top-[74px] z-10 rounded-xl border border-line/60 bg-panel/85 p-1.5 shadow-sm backdrop-blur-md">
+      <div className="no-print sticky top-[calc(74px+var(--project-identity-height,0px))] z-10 rounded-xl border border-line/60 bg-panel/85 p-1.5 shadow-sm backdrop-blur-md">
         <div className="flex items-center justify-between gap-1">
           <div className="flex gap-1">
             <button
@@ -607,13 +595,13 @@ export function DashboardClientWorkspace({
       ) : null}
 
       {activeTab === "summary" ? (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {/* Summary WBS Filter Bar (Hidden on Print) */}
-          <div className="no-print relative z-30 rounded-2xl border border-line/80 bg-panel/90 p-4 shadow-sm backdrop-blur-md">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="no-print sticky top-[calc(126px+var(--project-identity-height,0px))] z-20 rounded-xl border border-line/80 bg-panel/95 px-4 py-2.5 shadow-sm backdrop-blur-md">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
-                <Filter className="h-4.5 w-4.5 text-accent" />
-                <span className="text-sm font-bold text-text">Summary WBS Filter</span>
+                <Filter className="h-4 w-4 text-accent" />
+                <span className="text-xs font-bold text-text">Summary WBS Filter</span>
               </div>
               <div className="w-full max-w-md">
                 <MultiWbsSelect
@@ -627,7 +615,7 @@ export function DashboardClientWorkspace({
           </div>
 
           {editingLayout ? (
-            <div className="no-print sticky top-[132px] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+            <div className="no-print sticky top-[calc(132px+var(--project-identity-height,0px))] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-accent">
                 <LayoutGrid className="h-4 w-4 shrink-0" />
                 <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> · {layoutMsg}</span> : null}</span>

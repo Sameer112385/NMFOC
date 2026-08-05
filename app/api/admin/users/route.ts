@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { isLocalDbMode, readLocalUsers, createLocalUser, deleteLocalUser, updateLocalUser } from '@/lib/local-db';
+import { requireAdminUser } from '@/lib/current-user';
 
 export async function GET() {
   try {
+    await requireAdminUser();
     if (await isLocalDbMode()) {
       const users = await readLocalUsers();
       return NextResponse.json({ ok: true, users });
@@ -52,6 +54,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    await requireAdminUser();
     const payload = await request.json();
     const email = String(payload.email ?? '').trim();
     const password = String(payload.password ?? '');
@@ -119,6 +122,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    await requireAdminUser();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
 
@@ -153,6 +157,7 @@ export async function DELETE(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    await requireAdminUser();
     const payload = await request.json();
     const userId = String(payload.userId ?? '').trim();
     const full_name = payload.full_name !== undefined ? String(payload.full_name ?? '').trim() : undefined;

@@ -1,3 +1,4 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { fetchAllSupabaseRows } from '@/lib/supabase/pagination';
@@ -7,6 +8,7 @@ import { createSnapshot, buildRiskAlerts } from '@/lib/calculations';
 import { isLocalDbMode, readProjects as readLocalProjects, recalculateLocalFinancials } from '@/lib/local-db';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = (await request.json().catch(() => ({}))) as { project_id?: string; projectId?: string };
     const projectId = String(payload.project_id ?? payload.projectId ?? '').trim();
@@ -81,7 +83,9 @@ export async function POST(request: Request) {
     if (financialRows.length) {
       const { error: upsertRevenueError } = await supabase.from('revenue_wbs').upsert(
         financialRows.map((row) => toRevenueWbsDbRow(row, row.upload_id ?? null)),
-        { onConflict: 'project_id,wbs_code' },
+        // Preserve the stable WBS UUID so PM daily updates remain linked when
+        // source data changes only the WBS code formatting.
+        { onConflict: 'id' },
       );
       if (upsertRevenueError) throw upsertRevenueError;
     }

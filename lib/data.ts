@@ -975,56 +975,84 @@ function mergeProjectWbsMasterRows(
   storedRows: ProjectWbsMaster[],
 ) {
   const storedMap = new Map(storedRows.map((row) => [normalizeWbsHierarchyCode(row.wbs_code), row] as const));
-  const cn41Rows = latestCn41Rows
-    .map((row) => {
-      const raw = row.raw_data_json ?? {};
-      const rawCode = String(
-        row.wbs_code ??
-          raw.projectitem ??
-          raw.project_item ??
-          raw.projektelm ??
-          raw.projectelm ??
-          raw['Projektelm'] ??
-          raw['WBS Element'] ??
-          '',
-      ).trim();
-      const objectType = String(row.object_type ?? raw.object_type ?? raw.objecttype ?? '').trim().toLowerCase();
-      if (!rawCode) return null;
-      if (!isWbsElementObjectType(objectType)) return null;
+  const candidates = new Map<string, {
+    wbs_code: string;
+    wbs_description: string;
+    is_revenue_generating: boolean;
+  }>();
 
-      return {
-        wbs_code: rawCode,
-        wbs_description: pickFirstNonEmpty(
-          String(row.wbs_description ?? '').trim(),
-          String(raw.wbs_description ?? '').trim(),
-          String(raw.project_object ?? raw['Project object'] ?? '').trim(),
-        ),
-      };
-    })
-    .filter((row): row is { wbs_code: string; wbs_description: string } => Boolean(row));
+  const addCandidate = (candidate: { wbs_code: string; wbs_description?: string; is_revenue_generating?: boolean }) => {
+    const normalizedCode = normalizeWbsHierarchyCode(candidate.wbs_code);
+    if (!normalizedCode) return;
 
-  const uniqueCodes = new Set<string>();
-  const mergedCandidates = [...cn41Rows].filter((row) => {
-    const code = normalizeWbsHierarchyCode(String(row.wbs_code ?? '').trim());
-    if (!code || uniqueCodes.has(code)) return false;
-    uniqueCodes.add(code);
-    return true;
-  });
+    const existing = candidates.get(normalizedCode);
+    candidates.set(normalizedCode, {
+      wbs_code: existing?.wbs_code || candidate.wbs_code,
+      wbs_description: pickFirstNonEmpty(existing?.wbs_description ?? '', candidate.wbs_description ?? ''),
+      is_revenue_generating: Boolean(existing?.is_revenue_generating || candidate.is_revenue_generating),
+    });
+  };
 
-  return mergedCandidates
-    .map((row) => {
-      const normalizedCode = normalizeWbsHierarchyCode(String(row.wbs_code ?? '').trim());
+  // CN41 remains the preferred hierarchy source when its WBS element type is available.
+  for (const row of latestCn41Rows) {
+    const raw = row.raw_data_json ?? {};
+    const rawCode = String(
+      row.wbs_code ?? raw.projectitem ?? raw.project_item ?? raw.projektelm ?? raw.projectelm ?? raw['Projektelm'] ?? raw['WBS Element'] ?? '',
+    ).trim();
+    const objectType = String(row.object_type ?? raw.object_type ?? raw.objecttype ?? '').trim().toLowerCase();
+    if (!rawCode || !isWbsElementObjectType(objectType)) continue;
+
+    addCandidate({
+      wbs_code: rawCode,
+      wbs_description: pickFirstNonEmpty(
+        String(row.wbs_description ?? '').trim(),
+        String(raw.wbs_description ?? '').trim(),
+        String(raw.project_object ?? raw['Project object'] ?? '').trim(),
+      ),
+    });
+  }
+
+  // Financial rows are built from all uploaded sources. This fills the master even
+  // when a CN41 export uses an unrecognised object type or lacks hierarchy rows.
+  for (const row of revenueRows) {
+    const isRevenueGenerating = [
+      row.planned_revenue,
+      row.opening_recognized_revenue,
+      row.recognized_revenue_to_date,
+      row.current_month_revenue_recognition,
+      row.mtd_revenue_recognition,
+      row.ytd_revenue_recognition,
+      row.remaining_revenue,
+      row.revenue_value,
+      row.sap_earned_revenue,
+      row.simulated_revenue,
+    ].some((value) => safeNumber(value) !== 0);
+
+    addCandidate({
+      wbs_code: String(row.wbs_code ?? '').trim(),
+      wbs_description: String(row.wbs_description ?? '').trim(),
+      is_revenue_generating: isRevenueGenerating,
+    });
+  }
+
+  // Retain manual WBS configuration even if its source rows are absent in a later upload.
+  for (const row of storedRows) {
+    addCandidate({
+      wbs_code: row.wbs_code,
+      wbs_description: row.wbs_description,
+      is_revenue_generating: row.is_revenue_generating,
+    });
+  }
+
+  return [...candidates.entries()]
+    .map(([normalizedCode, candidate]) => {
       const stored = storedMap.get(normalizedCode);
-      const rawCode = String(stored?.wbs_code ?? row.wbs_code ?? '').trim();
       return {
         id: stored?.id,
         project_id: projectId,
-        wbs_code: rawCode,
-        wbs_description: pickFirstNonEmpty(
-          row.wbs_description ?? '',
-          stored?.wbs_description ?? '',
-        ),
-        is_revenue_generating: stored?.is_revenue_generating ?? false,
+        wbs_code: String(stored?.wbs_code ?? candidate.wbs_code).trim(),
+        wbs_description: pickFirstNonEmpty(stored?.wbs_description ?? '', candidate.wbs_description),
+        is_revenue_generating: stored?.is_revenue_generating ?? candidate.is_revenue_generating,
         include_in_cost: stored?.include_in_cost ?? true,
         is_active: stored?.is_active ?? true,
         remarks: stored?.remarks ?? '',
@@ -1033,7 +1061,6 @@ function mergeProjectWbsMasterRows(
     })
     .sort((a, b) => a.wbs_code.localeCompare(b.wbs_code));
 }
-
 function filterRevenueGeneratingRows(rows: RevenueWBS[], masterRows: ProjectWbsMaster[]) {
   if (!masterRows.length) {
     return rows.filter((row) => safeNumber(row.planned_revenue) !== 0);

@@ -1,8 +1,10 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isLocalDbMode, saveComment } from '@/lib/local-db';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   const formData = await request.formData();
   const project_id = String(formData.get('project_id') ?? '').trim();
   const wbs_code = String(formData.get('wbs_code') ?? '').trim();

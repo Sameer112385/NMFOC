@@ -1,7 +1,9 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import { createProjectMaterialMaster, deleteProjectMaterialMaster, getProjectWbsMaster, updateProjectMaterialMaster } from '@/lib/data';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = await request.json();
     const project_id = String(payload.project_id ?? '').trim();
@@ -47,6 +49,7 @@ function normalizeWbsCode(code: string) {
 }
 
 export async function DELETE(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = await request.json();
     const id = String(payload.id ?? '').trim();
@@ -64,6 +67,7 @@ export async function DELETE(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = await request.json();
     const id = String(payload.id ?? '').trim();

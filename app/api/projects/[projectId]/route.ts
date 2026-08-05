@@ -4,6 +4,7 @@ import { requireAdminUser } from '@/lib/current-user';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
+    await requireAdminUser();
     const { projectId } = await params;
     const payload = await request.json().catch(() => ({} as Record<string, unknown>));
 

@@ -129,3 +129,15 @@ Two consequences worth internalising:
 * **`revenue_wbs` legacy alias fields** — `sap_actual_cost`, `sap_planned_cost`, `sap_poc_percent`, `pm_pending_cost`, `simulated_actual_cost`, `simulated_poc_percent`, `simulated_revenue`, `revenue_difference`, `sap_earned_revenue`, `prrevpl000`, `revenue_value` exist as type aliases in `lib/types.ts` from a prior migration. Do not remove them — some pages may still reference them.
 * **Company branding sidebar/login state** — sidebar open/close state in `localStorage` key `sap-cn41-sidebar-open`; company name/subtext in `localStorage` only (reset per browser/device).
 * **`getProjectManagerUsers()` uses Supabase admin client** — service-role key, bypasses RLS. Required because `users_profile` RLS prevents non-admin reads. Any new function that lists users across the system needs the admin client similarly.
+
+---
+
+## 8. Latest Dashboard UX & Data Rules (2026-08-04)
+
+* The dashboard has a two-stage project identity: the normal large project title appears at the top; after it scrolls away, a smaller fixed strip displays the project name and project code. This keeps exported screenshots identifiable without making the initial heading small.
+* The compact strip follows the expandable/collapsible sidebar through CSS variable `--app-sidebar-width` set by `components/app-shell.tsx`. Its height is exposed as `--project-identity-height`, which is also used by sticky tabs and filters to avoid overlap.
+* The Financial Summary tab segment and Summary WBS filter are sticky and intentionally compact. `Executive Dashboard` was removed from the project header; the application header is `Dashboard`.
+* Financial Summary card order: Planned Cost, Planned Revenue, Actual Cost, Recognized Revenue, POC %, Forecast Margin. Actual Cost includes SAP posted cost plus PM simulated cost. Recognized Revenue is the combined revenue of all revenue-generating WBS.
+* Revenue contribution is presented as a sortable WBS list: Name, formatted Revenue (M/K), and POC %. Fill colour is based on POC (red/amber/green); sorting supports Revenue or POC, ascending or descending.
+* CN41 planned-cost source rule: filter `ObjectType` to `WBS element`; use `Projektelm` as WBS code, `Project Object` as description, and `OCostPlan0` or `PrCstSc000` as planned cost. Historical revenue uploads do not replace CN41 and cannot supply planned cost.
+* Trend cumulative revenue must never fall in the current period because current POC is below historical posting. Per WBS, retain `max(prior posted cumulative revenue, POC revenue)` for the current cumulative point.

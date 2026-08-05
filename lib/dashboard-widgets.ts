@@ -25,8 +25,9 @@ export type DashboardWidget = {
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // --- Financial Summary · Stat cards (narrow: 2/12) ---
   { id: 'summary.card.plannedCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Cost', span: 2 },
-  { id: 'summary.card.mgmtActualCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Management Actual Cost', span: 2 },
+
   { id: 'summary.card.plannedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Planned Revenue', span: 2 },
+  { id: 'summary.card.mgmtActualCost', tab: 'summary', group: 'Summary · Stat cards', title: 'Actual Cost', span: 2 },
   { id: 'summary.card.recognizedRevenue', tab: 'summary', group: 'Summary · Stat cards', title: 'Recognized Revenue', span: 2 },
   { id: 'summary.card.forecastMargin', tab: 'summary', group: 'Summary · Stat cards', title: 'Forecast Margin', span: 2 },
   { id: 'summary.card.pocPercent', tab: 'summary', group: 'Summary · Stat cards', title: 'POC %', span: 2 },
@@ -48,7 +49,6 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
 
   // --- Financial Summary · Tables & detail panels ---
   { id: 'summary.table.wbsFinancialAnalysis', tab: 'summary', group: 'Summary · Tables & details', title: 'WBS Financial Analysis', span: 12 },
-  { id: 'summary.panel.projectDetails', tab: 'summary', group: 'Summary · Tables & details', title: 'Project Details', span: 6 },
   { id: 'summary.panel.pendingForPosting', tab: 'summary', group: 'Summary · Tables & details', title: 'Pending for Posting', span: 6 },
   { id: 'summary.panel.topRiskExposure', tab: 'summary', group: 'Summary · Tables & details', title: 'Top Risk Exposure', span: 12 },
 
@@ -78,14 +78,14 @@ export function defaultOrder(tab: DashboardTab): string[] {
 export function defaultRowLayout(tab: DashboardTab): string[][] {
   if (tab === 'summary') {
     return [
-      ['summary.card.plannedCost', 'summary.card.mgmtActualCost', 'summary.card.plannedRevenue', 'summary.card.recognizedRevenue', 'summary.card.forecastMargin', 'summary.card.pocPercent'],
+      ['summary.card.plannedCost', 'summary.card.plannedRevenue', 'summary.card.mgmtActualCost', 'summary.card.recognizedRevenue', 'summary.card.pocPercent', 'summary.card.forecastMargin'],
       ['summary.panel.sapView', 'summary.panel.managementView'],
       ['summary.panel.projectToDate', 'summary.panel.ytdPerformance', 'summary.panel.periodRollups'],
       ['summary.chart.revenueTrend', 'summary.chart.revenueSplit'],
       ['summary.chart.pocByWbs', 'summary.chart.revenueVsSimulation'],
       ['summary.chart.costComparison', 'summary.chart.topWbs'],
       ['summary.table.wbsFinancialAnalysis'],
-      ['summary.panel.projectDetails', 'summary.panel.pendingForPosting'],
+      ['summary.panel.pendingForPosting'],
       ['summary.panel.topRiskExposure'],
     ];
   }

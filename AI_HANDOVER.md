@@ -209,3 +209,27 @@ Changed:
 6. **Company name/subtext cross-device persistence** — currently stored in `localStorage` only; resets on new browser/device. Store in database if management wants consistent branding across all users.
 7. **Finish the pre-aggregation migration** *(partially done)*: `syncGr55Summaries()` already exists and the **dashboard already reads `gr55_summaries`**. The calculation path (`recalculate/route.ts`, `lib/financial-engine.ts`) still reads raw `gr55_rows`.
 8. **Consider deriving the reporting period project-wide** rather than per-WBS in `lib/calculations.ts`, so `revenue_wbs` stops mixing months.
+
+---
+
+## 9. Latest Implementation Notes (2026-08-04)
+
+### Dashboard identity and layout
+* The project dashboard keeps the normal, full-size project heading at the top of the page. Once the user scrolls past it, `components/project-sticky-identity.tsx` shows a compact fixed strip with **Project name + project code** so screenshots remain identifiable.
+* The compact strip must align with the live sidebar state. `components/app-shell.tsx` writes CSS variable `--app-sidebar-width` (`272px` expanded / `72px` collapsed); the strip uses it on desktop. Do not restore a `left: 0` full-window strip, as it will render beneath the sidebar and hide the project name.
+* Dashboard tabs and the Summary WBS filter are sticky. Their offsets use `--project-identity-height`, which is `0px` normally and `44px` only while the compact identity strip is visible. This prevents the controls from overlapping the strip.
+* Header spacing and the Summary WBS selector were intentionally compacted. The old `Executive Dashboard` subtitle was removed; the global top bar remains simply `Dashboard`.
+
+### Financial-summary presentation
+* Summary order is **Planned Cost, Planned Revenue, Actual Cost, Recognized Revenue, POC %, Forecast Margin**.
+* Labels: `Management Actual Cost` is now `Actual Cost`; its helper text is `SAP Posted Cost + PM Simulated Cost`. Recognized Revenue helper text is `Combined Revenue of All Revenue-Generating WBS`.
+* The WBS POC chart was replaced by a scrollable revenue-contribution list showing **Name | Revenue | POC %**. Revenue abbreviates to M/K where applicable, row progress fill follows POC (red/amber/green), and sorting supports Revenue and POC in both directions.
+
+### CN41 planned-cost mapping
+* For CN41 imports, keep only `ObjectType = WBS element` rows for WBS baseline extraction.
+* `Projektelm` is the WBS code; `Project Object` is the WBS description; `OCostPlan0` or `PrCstSc000` is planned cost.
+* A saved WBS master must not suppress a valid CN41 planned-cost WBS merely because it has not yet been registered in the master. Explicit inactive/excluded master rows still exclude it.
+* If planned cost/revenue appears incorrect after upload, first verify the source type. A historical revenue file uploaded in place of CN41 cannot supply planned cost; the app will recalculate correctly once the proper CN41 file is uploaded.
+
+### Trend integrity
+* Current-period cumulative revenue uses the greater of prior posted cumulative revenue and POC revenue per WBS. This prevents the cumulative revenue curve from dropping at the latest period.

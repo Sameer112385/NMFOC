@@ -53,11 +53,9 @@ export function buildFinancialRowsFromSources({
     if (!code) continue;
     if (!isWbsElementObjectType(String(row.object_type ?? ''))) continue;
     const config = masterMap.get(code);
-    if (hasWbsMaster) {
-      if (!config || config.is_active === false || config.include_in_cost === false) continue;
-    } else if (config && config.is_active === false) {
-      continue;
-    }
+    // A saved master can explicitly exclude a WBS, but it must not suppress a
+    // valid CN41 planned-cost WBS simply because that code is new to the master.
+    if (config?.is_active === false || config?.include_in_cost === false) continue;
     const existing = plannedCostMap.get(code);
     plannedCostMap.set(code, {
       wbs_code: existing?.wbs_code || displayCode,

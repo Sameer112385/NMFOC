@@ -1,3 +1,4 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
@@ -20,6 +21,7 @@ import {
 type SourceType = 'cn41' | 'gr55' | 'sales_order' | 'historical_revenue';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   const formData = await request.formData();
   const projectId = String(formData.get('project_id') ?? '').trim();
   const sourceTypes = formData
@@ -475,7 +477,9 @@ async function buildFinancialRowsFromSourcesForSupabase(supabase: Awaited<Return
   if (financialRows.length) {
     const { error: upsertRevenueError } = await supabase.from('revenue_wbs').upsert(
       financialRows.map((row) => toRevenueWbsDbRow(row, null)),
-      { onConflict: 'project_id,wbs_code' },
+      // Preserve the stable WBS UUID so PM daily updates remain linked when
+      // source data changes only the WBS code formatting.
+      { onConflict: 'id' },
     );
     if (upsertRevenueError) throw upsertRevenueError;
   }

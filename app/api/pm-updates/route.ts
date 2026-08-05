@@ -1,3 +1,4 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
@@ -11,6 +12,7 @@ import { deletePmUpdate } from '@/lib/data';
 import { truncateFinancialOutput } from '@/lib/financial-format';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   const formData = await request.formData();
   const project_id = String(formData.get('project_id') ?? '').trim();
   const revenue_wbs_id = String(formData.get('revenue_wbs_id') ?? '').trim();
@@ -172,6 +174,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  await requireProjectEditorUser();
   try {
     const body = (await request.json()) as {
       id?: string;
@@ -437,6 +440,7 @@ function normalizeNullableText(value: unknown) {
 }
 
 export async function DELETE(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = await request.json();
     const id = String(payload.id ?? '').trim();

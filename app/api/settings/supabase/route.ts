@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { clearSupabaseRuntimeConfig, getSupabaseRuntimeConfig, saveSupabaseRuntimeConfig } from '@/lib/supabase/runtime-config';
+import { requireAdminUser } from '@/lib/current-user';
 
 export async function GET() {
+  await requireAdminUser();
   const config = await getSupabaseRuntimeConfig();
   return NextResponse.json({
     configured: Boolean(config?.supabaseUrl && config?.supabaseAnonKey),
@@ -15,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  await requireAdminUser();
   const payload = await request.json().catch(() => ({} as Record<string, string | boolean | null>));
 
   if (payload.action === 'clear') {

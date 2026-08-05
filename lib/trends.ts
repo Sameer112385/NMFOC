@@ -407,41 +407,36 @@ export function buildTrendData(params: {
       cumulativeRecognizedRevenue = prevCumulativeRecognizedRevenue + recognizedRevenue;
       cumulativeForecastRevenue = prevCumulativeForecastRevenue + forecastRevenue;
     } else {
-      // Current Period (Current Month): Revenue is calculated using the POC method
+      // Current period: POC is a cumulative revenue estimate. It must never
+      // reduce revenue already posted in an earlier period for the same WBS.
       const pocRevenueByWbs = new Map<string, number>();
 
       activeRevenueWbs.forEach((row) => {
         const norm = normalizeCode(row.wbs_code);
         const actual = wbsActualCostMap.get(norm) || 0;
         const pending = wbsPendingCostMap.get(norm) || 0;
-
         const plannedCostWbs = row.planned_cost;
         const plannedRevenueWbs = row.planned_revenue;
-
         const poc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
-        const recognized = (poc / 100) * plannedRevenueWbs;
-        cumulativeRecognizedRevenue += recognized;
-        // Accumulate rather than set: if two costRows normalize to the same code the
-        // cumulative total above counts both, so the breakdown must too.
-        pocRevenueByWbs.set(norm, (pocRevenueByWbs.get(norm) ?? 0) + recognized);
-
-        const forecastPoc = plannedCostWbs > 0 ? Math.min(100, ((actual + pending) / plannedCostWbs) * 100) : 0;
-        const forecastRecognized = (forecastPoc / 100) * plannedRevenueWbs;
-        cumulativeForecastRevenue += forecastRecognized;
+        const pocRevenue = (poc / 100) * plannedRevenueWbs;
+        pocRevenueByWbs.set(norm, (pocRevenueByWbs.get(norm) ?? 0) + pocRevenue);
       });
 
-      // In-period revenue per WBS = its cumulative POC revenue less what it already billed.
-      // Union the key sets so a WBS with prior postings but no POC row still surfaces as a
-      // negative reversal instead of silently unbalancing the column.
       const norms = new Set<string>([...pocRevenueByWbs.keys(), ...priorPostedByWbs.keys()]);
       norms.forEach((norm) => {
-        wbsRevenue.set(norm, (pocRevenueByWbs.get(norm) ?? 0) - (priorPostedByWbs.get(norm) ?? 0));
+        const priorPosted = priorPostedByWbs.get(norm) ?? 0;
+        const pocRevenue = pocRevenueByWbs.get(norm) ?? 0;
+        const currentCumulativeRevenue = Math.max(priorPosted, pocRevenue);
+        const currentPeriodRevenue = currentCumulativeRevenue - priorPosted;
+
+        cumulativeRecognizedRevenue += currentCumulativeRevenue;
+        cumulativeForecastRevenue += currentCumulativeRevenue;
+        wbsRevenue.set(norm, currentPeriodRevenue);
       });
 
       recognizedRevenue = cumulativeRecognizedRevenue - prevCumulativeRecognizedRevenue;
       forecastRevenue = cumulativeForecastRevenue - prevCumulativeForecastRevenue;
     }
-
     // Extract periodic values for cost
     const actualCost = cumulativeActualCost - prevCumulativeActualCost;
     const forecastCost = cumulativeForecastCost - prevCumulativeForecastCost;

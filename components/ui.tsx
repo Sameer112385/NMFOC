@@ -1,16 +1,17 @@
 import { cn, formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
-export function PageShell({ title, subtitle, kicker, actions, children }: {
+export function PageShell({ title, subtitle, kicker, actions, children, compact = false }: {
   title: string;
   subtitle?: string;
   kicker?: string;
   actions?: ReactNode;
   children: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-line/50 pb-5 md:flex-row md:items-center md:justify-between no-print">
+    <div className={compact ? "space-y-2" : "space-y-6"}>
+      <div className={cn("flex flex-col gap-4 border-b border-line/50 md:flex-row md:items-center md:justify-between no-print", compact ? "pb-2" : "pb-5")}>
         <div>
           {kicker ? <div className="section-kicker text-accent font-bold tracking-[0.12em]">{kicker}</div> : null}
           <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-text md:text-3xl">{title}</h1>

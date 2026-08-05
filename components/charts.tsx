@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Area,
   AreaChart,
@@ -82,7 +82,7 @@ const CustomChartTooltip = ({ active, payload, label, formatter, labelFormatter 
   );
 };
 
-function wrapChart({ title, subtitle, className, children }: { title: string; subtitle?: string; className?: string; children: ReactNode }) {
+function wrapChart({ title, subtitle, className, children }: { title: ReactNode; subtitle?: string; className?: string; children: ReactNode }) {
   return (
     <div className={cn(surfaceCard, 'overflow-hidden border border-line/40 bg-panel/30 shadow-card hover:shadow-md hover:border-line/75', className)}>
       <div className="border-b border-line/30 px-5 py-4">
@@ -270,39 +270,59 @@ export function RevenueSplitChart({ recognized, remaining, total }: { recognized
   });
 }
 
-export function PocChart({ data }: { data: { name: string; value: number }[] }) {
-  const chartWidth = Math.max(500, data.length * 45);
+export function PocChart({ data }: { data: { code: string; name: string; revenue: number; poc: number }[] }) {
+  const [sortBy, setSortBy] = useState<'revenueDesc' | 'revenueAsc' | 'pocDesc' | 'pocAsc'>('revenueDesc');
+  const rows = [...data]
+    .filter((row) => Number.isFinite(row.revenue) && Math.abs(row.revenue) > 0)
+    .sort((a, b) => {
+      if (sortBy === 'revenueAsc') return a.revenue - b.revenue;
+      if (sortBy === 'pocDesc') return b.poc - a.poc;
+      if (sortBy === 'pocAsc') return a.poc - b.poc;
+      return b.revenue - a.revenue;
+    });
+
   return wrapChart({
-    title: 'POC % by WBS',
-    subtitle: 'Progress concentration across filtered work packages.',
+    title: (
+      <div className="flex items-center justify-between gap-3">
+        <span>Revenue Contribution by WBS</span>
+        <select
+          aria-label="Sort WBS by revenue"
+          value={sortBy}
+          onChange={(event) => setSortBy(event.target.value as 'revenueDesc' | 'revenueAsc' | 'pocDesc' | 'pocAsc')}
+          className="rounded-md border border-line bg-panel2 px-2 py-1 text-[11px] font-semibold text-text outline-none focus:border-accent"
+        >
+          <option value="revenueDesc">Revenue: High to Low</option>
+          <option value="revenueAsc">Revenue: Low to High</option>
+          <option value="pocDesc">POC: High to Low</option>
+          <option value="pocAsc">POC: Low to High</option>
+        </select>
+      </div>
+    ),
+    subtitle: 'All revenue-generating WBS links, with revenue and current POC progress.',
     children: (
-      <div className="h-full overflow-x-auto pb-2 scrollbar-thin">
-        <div style={{ width: chartWidth, height: 240 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgb(var(--color-line) / 0.3)" />
-              <XAxis 
-                dataKey="name" 
-                stroke="rgb(var(--color-muted) / 0.8)" 
-                fontSize={9} 
-                tickLine={false} 
-                axisLine={false} 
-                interval={0}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={chartAxisTickFormatter} />
-              <Tooltip content={<CustomChartTooltip formatter={chartTooltipFormatter} />} />
-              <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <div className="h-full max-h-[360px] overflow-y-auto pr-2 scrollbar-thin">
+        <div className="space-y-3">
+          {rows.map((row) => {
+            const poc = Math.max(0, Math.min(100, Number(row.poc) || 0));
+            const fill = poc < 40 ? '#ef4444' : poc < 75 ? '#f59e0b' : '#10b981';
+            return (
+              <div key={row.code} className="space-y-1.5">
+                <div className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="truncate font-medium text-text" title={row.name}>{row.name}</span>
+                  <span className="shrink-0 font-semibold text-text">{formatCompactCurrency(row.revenue)} · {formatPercent(poc)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-line/40" aria-label={`${row.name}: ${formatPercent(poc)} POC`}>
+                  <div className="h-full rounded-full transition-[width]" style={{ width: `${poc}%`, backgroundColor: fill }} />
+                </div>
+              </div>
+            );
+          })}
+          {!rows.length ? <p className="py-8 text-center text-sm text-muted">No revenue-generating WBS links are available.</p> : null}
         </div>
       </div>
     ),
   });
 }
-
 export function RiskChart({ data }: { data: { name: string; value: number }[] }) {
   return wrapChart({
     title: 'Risk Count by Type',

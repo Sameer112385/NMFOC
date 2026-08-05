@@ -20,13 +20,12 @@
         "summary": [
           [
             "summary.card.plannedCost",
-            "summary.card.mgmtActualCost",
             "summary.card.plannedRevenue",
+            "summary.card.mgmtActualCost",
             "summary.card.recognizedRevenue",
             "summary.card.pocPercent"
           ],
           [
-            "summary.panel.projectDetails",
             "summary.panel.sapView"
           ],
           [

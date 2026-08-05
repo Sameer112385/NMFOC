@@ -13,7 +13,9 @@ export async function createSupabaseServerClient() {
 
   return createServerClient(
     config.supabaseUrl,
-    config.supabaseServiceRoleKey || config.supabaseAnonKey,
+    // Server clients act on behalf of the requesting user's cookie-backed
+    // session. Privileged server work must use createSupabaseAdminClient().
+    config.supabaseAnonKey,
     {
       cookies: {
         get(name: string) {

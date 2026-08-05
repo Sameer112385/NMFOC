@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isLocalDbMode } from '@/lib/local-db';
 
@@ -11,18 +11,6 @@ export type CurrentAppUser = {
 };
 
 export async function getCurrentAppUser(): Promise<CurrentAppUser | null> {
-  const cookieStore = await cookies();
-
-  // Demo session takes priority — works even when Supabase is configured
-  if (cookieStore.has('sap-cn41-demo-session')) {
-    return {
-      id: 'demo-admin',
-      email: 'admin@local',
-      role: 'Admin',
-      fullName: 'Sameer Shaikh',
-      mode: 'demo',
-    };
-  }
 
   if (await isLocalDbMode()) {
     return null;
@@ -91,6 +79,13 @@ export async function requireRouteAccess(pathname: string) {
   return user;
 }
 
+export async function requireProjectEditorUser() {
+  const user = await getCurrentAppUser();
+  if (!user || (user.role !== 'Admin' && user.role !== 'Cost Controller')) {
+    throw new Error('Cost Controller or Admin access is required.');
+  }
+  return user;
+}
 export async function requireAdminUser() {
   const user = await getCurrentAppUser();
   if (!user || user.role !== 'Admin') {

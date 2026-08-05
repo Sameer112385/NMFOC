@@ -59,7 +59,7 @@ export default async function SimulationPage() {
         <CostComparisonChart data={revenueRows.map((row) => ({ name: row.wbs_code, sap: row.actual_cost_to_date, simulated: row.planned_cost }))} />
         <TopWbsChart data={revenueRows.slice().sort((a, b) => b.recognized_revenue_to_date - a.recognized_revenue_to_date).slice(0, 10).map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.recognized_revenue_to_date }))} />
         <PendingChart data={updates.slice(0, 8).map((update) => ({ name: update.revenue_wbs_id, value: getEffectivePendingCost(update) }))} />
-        <PocChart data={revenueRows.map((row) => ({ name: row.wbs_description || row.wbs_code, value: row.poc_percent }))} />
+        <PocChart data={revenueRows.map((row) => ({ code: row.wbs_code, name: row.wbs_description || row.wbs_code, revenue: row.recognized_revenue_to_date, poc: row.poc_percent }))} />
         <RiskChart
           data={Array.from(risks.reduce((map, risk) => map.set(risk.risk_type, (map.get(risk.risk_type) ?? 0) + 1), new Map<string, number>()), ([name, value]) => ({ name, value }))}
         />

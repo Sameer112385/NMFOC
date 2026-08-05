@@ -1,7 +1,9 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import { replaceProjectCostElementControl } from '@/lib/data';
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   try {
     const payload = (await request.json()) as {
       project_id?: string;

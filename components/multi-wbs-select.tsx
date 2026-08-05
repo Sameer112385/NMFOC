@@ -106,7 +106,7 @@ export function MultiWbsSelect({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-2.5 rounded-lg border border-line bg-panel px-3 py-2.5 text-left text-xs text-text outline-none transition focus:border-accent focus:ring-1 focus:ring-accent shadow-sm"
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-panel px-3 py-1.5 text-left text-xs text-text outline-none transition focus:border-accent focus:ring-1 focus:ring-accent shadow-sm"
         aria-haspopup="listbox"
         aria-expanded={open}
       >

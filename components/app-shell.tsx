@@ -22,6 +22,11 @@ export function AppShell({ children, userRole, userName }: { children: React.Rea
   }, []);
 
   useEffect(() => {
+    document.documentElement.style.setProperty('--app-sidebar-width', sidebarOpen ? '272px' : '72px');
+    return () => { document.documentElement.style.removeProperty('--app-sidebar-width'); };
+  }, [sidebarOpen]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, String(sidebarOpen));
     } catch {

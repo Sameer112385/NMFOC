@@ -29,49 +29,19 @@ export default function LoginPage() {
     setCompanyName(window.localStorage.getItem('company_name') || 'DETASAD');
     setCompanySubtext(window.localStorage.getItem('company_subtext') || 'Detecon Al Saudia');
     setLogoTimestamp(window.localStorage.getItem('login_logo_timestamp') || '');
-    // Clear demo session on mount (logout)
-    window.localStorage.removeItem('sap-cn41-demo-session');
-    document.cookie = 'sap-cn41-demo-session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    const configured = Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    );
+    setIsSupabaseConfigured(configured);
 
-    (async () => {
+    if (configured) {
       try {
-        const response = await fetch('/api/settings/supabase');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.configured && data.supabaseUrl && data.supabaseAnonKey) {
-            window.localStorage.setItem('sap-cn41-supabase-url', data.supabaseUrl);
-            window.localStorage.setItem('sap-cn41-supabase-anon-key', data.supabaseAnonKey);
-            setIsSupabaseConfigured(true);
-            try {
-              const supabase = createSupabaseBrowserClient();
-              supabase.auth.signOut().catch(() => {});
-            } catch {
-              // ignore
-            }
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('Failed to sync Supabase client configuration', err);
+        const supabase = createSupabaseBrowserClient();
+        supabase.auth.signOut().catch(() => {});
+      } catch {
+        // ignore
       }
-
-      const configured =
-        Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
-        Boolean(
-          window.localStorage.getItem('sap-cn41-supabase-url') &&
-            window.localStorage.getItem('sap-cn41-supabase-anon-key'),
-        );
-      setIsSupabaseConfigured(configured);
-
-      if (configured) {
-        try {
-          const supabase = createSupabaseBrowserClient();
-          supabase.auth.signOut().catch(() => {});
-        } catch {
-          // ignore
-        }
-      }
-    })();
+    }
   }, []);
 
   async function handleSubmit(event: React.FormEvent) {
@@ -79,33 +49,8 @@ export default function LoginPage() {
     setLoading(true);
     setMessage('');
 
-    const isAdminLogin =
-      email.trim().toLowerCase() === 'admin' ||
-      email.trim().toLowerCase() === 'admin@local' ||
-      email.trim().toLowerCase() === 'admin@example.com';
-
-    if (isAdminLogin && password === 'admin123') {
-      localStorage.setItem(
-        'sap-cn41-demo-session',
-        JSON.stringify({
-          email: 'admin@local',
-          role: 'Admin',
-          authenticatedAt: new Date().toISOString(),
-        }),
-      );
-      // Set the demo session cookie for the server layout to read
-      document.cookie = 'sap-cn41-demo-session=true; path=/; max-age=86400';
-      router.push('/projects');
-      return;
-    }
-
     if (!isSupabaseConfigured) {
-      if (isSignUp) {
-        setMessage('Sign Up is not available in local demo mode. Use the admin/admin123 credentials.');
-        setLoading(false);
-        return;
-      }
-      setMessage('Demo login: use admin / admin123 until Supabase is configured.');
+      setMessage('Supabase is not configured. Set the required environment variables before signing in.');
       setLoading(false);
       return;
     }
@@ -143,7 +88,7 @@ export default function LoginPage() {
     setMessage('');
     try {
       if (!isSupabaseConfigured) {
-        setMessage('Supabase is not configured yet. Use the temporary admin login: admin / admin123.');
+        setMessage('Supabase is not configured. Set the required environment variables before requesting a login link.');
         return;
       }
       const supabase = createSupabaseBrowserClient();

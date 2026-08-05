@@ -1,3 +1,4 @@
+import { requireProjectEditorUser } from '@/lib/current-user';
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { createProjectManpowerRate, createProjectMaterialMaster, getProjectWbsMaster } from '@/lib/data';
@@ -5,6 +6,7 @@ import { createProjectManpowerRate, createProjectMaterialMaster, getProjectWbsMa
 type BulkRow = Record<string, string | number | boolean | null | undefined>;
 
 export async function POST(request: Request) {
+  await requireProjectEditorUser();
   try {
     const formData = await request.formData();
     const projectId = String(formData.get('project_id') ?? '').trim();

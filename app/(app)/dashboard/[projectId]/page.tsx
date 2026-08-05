@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { PageShell, Badge } from '@/components/ui';
+import { PageShell } from '@/components/ui';
+import { ProjectStickyIdentity } from '@/components/project-sticky-identity';
 import {
   getDailyUpdates,
   getProjectById,
@@ -72,9 +73,17 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
   return (
     <PageShell
       title={`Project: ${project.project_name}`}
-      subtitle="Executive Dashboard"
-      actions={<Badge tone="accent">{project.project_code}</Badge>}
+      compact
+      actions={
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-xs">
+          <span className="font-mono font-semibold text-text">{project.project_code}</span>
+          <span className="text-muted"><span className="font-semibold text-text">Client:</span> {project.client_name ?? '-'}</span>
+          <span className="text-muted"><span className="font-semibold text-text">Status:</span> {project.status ?? 'Active'}</span>
+          <span className="text-muted"><span className="font-semibold text-text">PM updates:</span> {updates.length}</span>
+        </div>
+      }
     >
+      <ProjectStickyIdentity projectName={project.project_name} projectCode={project.project_code} />
       <DashboardClientWorkspace
         project={project}
         projects={projects}
