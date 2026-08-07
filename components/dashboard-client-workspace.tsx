@@ -33,6 +33,7 @@ import type {
   ProjectManpowerRate,
   ProjectMaterialMaster,
   ProjectWbsMaster,
+  PoCommitmentRow,
   RevenueWBS,
 } from "@/lib/types";
 
@@ -107,6 +108,7 @@ interface DashboardClientWorkspaceProps {
   manpowerRates: ProjectManpowerRate[];
   materialMasters: ProjectMaterialMaster[];
   projectWbsMaster: ProjectWbsMaster[];
+  poCommitments: PoCommitmentRow[];
   costElementControl: ProjectCostElementControl[];
   gr55Rows: Gr55CostRow[];
   historicalRevenueRows?: HistoricalRevenueRow[];
@@ -127,6 +129,7 @@ export function DashboardClientWorkspace({
   manpowerRates,
   materialMasters,
   projectWbsMaster,
+  poCommitments,
   costElementControl,
   gr55Rows,
   historicalRevenueRows = [],
@@ -143,7 +146,7 @@ export function DashboardClientWorkspace({
   const [editRows, setEditRows] = useState<string[][]>([]);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutMsg, setLayoutMsg] = useState("");
-  // Trends & Cost Trends tab edit mode — states live here so the tab-bar buttons can trigger them.
+  // Trends & Cost Trends tab edit mode â€” states live here so the tab-bar buttons can trigger them.
   const [editingTrends, setEditingTrends] = useState(false);
   const [editingCostTrends, setEditingCostTrends] = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
@@ -529,7 +532,7 @@ export function DashboardClientWorkspace({
   return (
     <div className="space-y-3">
       {/* Sticky Tab Selector (Hidden on Print) */}
-      <div className="no-print sticky top-[calc(74px+var(--project-identity-height,0px))] z-10 rounded-xl border border-line/60 bg-panel/85 p-1.5 shadow-sm backdrop-blur-md">
+      <div className="no-print sticky top-[calc(56px+var(--project-identity-height,0px))] z-10 rounded-xl border border-line/60 bg-panel p-1.5 shadow-sm">
         <div className="flex items-center justify-between gap-1">
           <div className="flex gap-1">
             <button
@@ -597,7 +600,7 @@ export function DashboardClientWorkspace({
       {activeTab === "summary" ? (
         <div className="space-y-3">
           {/* Summary WBS Filter Bar (Hidden on Print) */}
-          <div className="no-print sticky top-[calc(126px+var(--project-identity-height,0px))] z-20 rounded-xl border border-line/80 bg-panel/95 px-4 py-2.5 shadow-sm backdrop-blur-md">
+          <div className="no-print sticky top-[calc(108px+var(--project-identity-height,0px))] z-20 rounded-xl border border-line/80 bg-panel px-4 py-2.5 shadow-sm">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-accent" />
@@ -615,10 +618,10 @@ export function DashboardClientWorkspace({
           </div>
 
           {editingLayout ? (
-            <div className="no-print sticky top-[calc(132px+var(--project-identity-height,0px))] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+            <div className="no-print sticky top-[calc(114px+var(--project-identity-height,0px))] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-accent">
                 <LayoutGrid className="h-4 w-4 shrink-0" />
-                <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> · {layoutMsg}</span> : null}</span>
+                <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> Â· {layoutMsg}</span> : null}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -666,6 +669,7 @@ export function DashboardClientWorkspace({
           historicalRevenueRows={historicalRevenueRows}
           updates={updates}
           wbsMaster={projectWbsMaster}
+          poCommitments={poCommitments}
           costElementControl={costElementControl}
           selectedPos={selectedPos}
           setSelectedPos={setSelectedPos}
@@ -686,6 +690,7 @@ export function DashboardClientWorkspace({
           historicalRevenueRows={historicalRevenueRows}
           updates={updates}
           wbsMaster={projectWbsMaster}
+          poCommitments={poCommitments}
           costElementControl={costElementControl}
           selectedPos={selectedPos}
           setSelectedPos={setSelectedPos}

@@ -5,6 +5,7 @@ import { UserManagementPanel } from '@/components/user-management-panel';
 import { AdminResetPanel } from '@/components/admin-reset-panel';
 import { CompanyLogoPanel } from '@/components/company-logo-panel';
 import { DashboardLayoutPanel } from '@/components/dashboard-layout-panel';
+import { VendorMasterPanel } from '@/components/vendor-master-panel';
 import { SettingsSection } from '@/components/settings-section';
 import { getCurrentAppUser, canAccessSettings, canManageDashboardLayout } from '@/lib/current-user';
 
@@ -29,13 +30,20 @@ export default async function SettingsPage() {
           <SettingsSection
             icon="dashboard"
             title="Dashboard Layout"
-            description="Show or hide dashboard visuals — reversible anytime."
+            description="Show or hide dashboard visuals â€” reversible anytime."
             defaultOpen
           >
             <DashboardLayoutPanel />
           </SettingsSection>
         ) : null}
 
+        <SettingsSection
+          icon="vendors"
+          title="Vendor / Supplier Master"
+          description="Admin-only global mapping for Vendor IDs used in GR55 uploads."
+        >
+          <VendorMasterPanel />
+        </SettingsSection>
         <SettingsSection
           icon="branding"
           title="Company Branding"

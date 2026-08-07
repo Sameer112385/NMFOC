@@ -29,6 +29,25 @@ export type Project = {
   created_at?: string;
 };
 
+export type PoCommitmentRow = {
+  id?: string;
+  project_id: string;
+  po_number: string;
+  po_item: string;
+  wbs_code: string;
+  network?: string | null;
+  activity?: string | null;
+  vendor_id?: string | null;
+  vendor_name?: string | null;
+  short_text?: string | null;
+  material_group?: string | null;
+  deletion_indicator?: string | null;
+  distribution_percent?: number | null;
+  net_order_value: number;
+  still_to_deliver_value: number;
+  currency?: string | null;
+  source_file_name?: string | null;
+};
 export type CN41Upload = {
   id: string;
   project_id: string;

@@ -22,8 +22,8 @@ export function ProjectStickyIdentity({ projectName, projectCode }: { projectNam
   if (!visible) return null;
 
   return (
-    <div className="no-print fixed left-0 right-0 top-[70px] z-30 border-b border-line/60 bg-page/95 px-4 py-2 shadow-sm backdrop-blur-md md:px-6 lg:left-[var(--app-sidebar-width,272px)] lg:px-8">
-      <div className="mx-auto flex max-w-[1800px] items-center gap-3 text-sm">
+    <div className="no-print fixed inset-x-0 top-[52px] z-30 border-b border-line bg-bg py-2 shadow-sm">
+      <div className="flex items-center gap-3 px-4 text-sm md:px-6 lg:ml-[var(--app-sidebar-width,272px)] lg:px-8">
         <span className="font-bold text-text">Project: {projectName}</span>
         <span className="font-mono text-xs font-semibold text-muted">{projectCode}</span>
       </div>

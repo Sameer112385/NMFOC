@@ -7,6 +7,7 @@ import {
   getProjectManpowerRates,
   getProjectMaterialMaster,
   getProjectWbsMaster,
+  getPoCommitmentRows,
   getRevenueGeneratingRows,
   getRevenueRows,
   getProjects,
@@ -32,6 +33,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
     manpowerRates,
     materialMasters,
     projectWbsMaster,
+    poCommitments,
     costElementControl,
     gr55Rows,
     historicalRevenueRows,
@@ -43,6 +45,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
     getProjectManpowerRates(projectId),
     getProjectMaterialMaster(projectId),
     getProjectWbsMaster(projectId),
+    getPoCommitmentRows(projectId),
     getProjectCostElementControl(projectId),
     getGr55Summaries(projectId),
     getHistoricalRevenueRows(projectId),
@@ -94,6 +97,7 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
         manpowerRates={manpowerRates}
         materialMasters={materialMasters}
         projectWbsMaster={projectWbsMaster}
+        poCommitments={poCommitments}
         costElementControl={costElementControl}
         gr55Rows={gr55Rows}
         historicalRevenueRows={historicalRevenueRows}

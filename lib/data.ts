@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
+import { getCurrentAppUser } from '@/lib/current-user';
 import { fetchAllSupabaseRows } from '@/lib/supabase/pagination';
 import { buildFinancialRowsFromSources } from '@/lib/financial-engine';
 import {
@@ -20,6 +21,7 @@ import {
   readProjectCostElementControl as readLocalProjectCostElementControl,
   readProjectSubcontracts as readLocalProjectSubcontracts,
   readProjectWbsMaster as readLocalProjectWbsMaster,
+  readLocalPoCommitmentRows,
   readProjects as readLocalProjects,
   readRevenueRows as readLocalRevenueRows,
   updateLocalProjectMaterialMaster,
@@ -46,6 +48,7 @@ import type {
   ProjectCostElementControl,
   ProjectSubcontract,
   ProjectWbsMaster,
+  PoCommitmentRow,
   RevenueWBS,
   RiskAlert,
   SalesOrderRevenueRow,
@@ -287,6 +290,26 @@ export async function getGr55Rows(projectId?: string): Promise<Gr55CostRow[]> {
   }
 }
 
+export async function getPoCommitmentRows(projectId: string): Promise<PoCommitmentRow[]> {
+  if (await isLocalDbMode()) return readLocalPoCommitmentRows(projectId) as Promise<PoCommitmentRow[]>;
+  const user = await getCurrentAppUser();
+  if (!user || (user.role !== 'Admin' && user.role !== 'Cost Controller')) return [];
+  try {
+    const supabase = await createSupabaseAdminClient();
+    const rows = await fetchAllSupabaseRows<any>(() => supabase.from('po_commitment_rows').select('*').eq('project_id', projectId).order('po_number'));
+    const vendorNames = new Map<string, string>();
+    try {
+      const vendorIds = [...new Set(rows.map((row) => String(row.vendor_id ?? '').trim()).filter(Boolean))];
+      if (vendorIds.length) {
+        const masterRows = await fetchAllSupabaseRows<any>(() => supabase.from('vendor_master').select('vendor_id, vendor_name').in('vendor_id', vendorIds));
+        masterRows.forEach((vendor) => vendorNames.set(String(vendor.vendor_id), String(vendor.vendor_name)));
+      }
+    } catch {
+      // PO data must remain available if optional name enrichment is unavailable.
+    }
+    return rows.map((row) => ({ ...row, vendor_name: vendorNames.get(String(row.vendor_id ?? '').trim()) ?? row.vendor_name })) as PoCommitmentRow[];
+  } catch { return []; }
+}
 export async function getHistoricalRevenueRows(projectId?: string): Promise<HistoricalRevenueRow[]> {
   if (await isLocalDbMode()) return readLocalHistoricalRevenueRows(projectId);
   try {
@@ -1202,5 +1225,4 @@ export async function updatePmUpdate(id: string, patch: Partial<DailyUpdate>) {
   if (error) throw error;
   return data as DailyUpdate;
 }
-
 

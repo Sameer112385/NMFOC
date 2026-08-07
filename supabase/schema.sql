@@ -7,6 +7,53 @@ create table if not exists users_profile (
   created_at timestamptz not null default now()
 );
 
+
+-- Confidential global Vendor / Supplier Master. No client-side policies are granted;
+-- access is exclusively through the Admin-protected server route.
+create table if not exists vendor_master (
+  vendor_id text primary key,
+  vendor_name text not null,
+  city text,
+  postal_code text,
+  source_status text,
+  source_file_name text,
+  imported_at timestamptz not null default now(),
+  imported_by uuid
+);
+
+-- PO commitments include supplier details. There is intentionally no public/authenticated read policy;
+-- only the role-checked server dashboard reads these rows with the service-role client.
+create table if not exists po_commitment_rows (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  po_number text not null,
+  po_item text,
+  wbs_code text not null,
+  network text,
+  activity text,
+  vendor_id text,
+  vendor_name text,
+  short_text text,
+  material_group text,
+  deletion_indicator text,
+  distribution_percent numeric not null default 0,
+  net_order_value numeric not null default 0,
+  still_to_deliver_value numeric not null default 0,
+  currency text,
+  source_file_name text,
+  created_at timestamptz not null default now()
+);
+
+-- PO commitments include supplier details. No client read policy is granted;
+-- the role-checked server dashboard uses the service-role client.
+create table if not exists po_commitment_rows (
+  id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade,
+  po_number text not null, po_item text, wbs_code text not null, network text, activity text,
+  vendor_id text, vendor_name text, short_text text, material_group text, deletion_indicator text,
+  distribution_percent numeric not null default 0, net_order_value numeric not null default 0,
+  still_to_deliver_value numeric not null default 0, currency text, source_file_name text,
+  created_at timestamptz not null default now()
+);
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   project_code text not null unique,
@@ -323,6 +370,9 @@ create table if not exists comments (
   created_at timestamptz not null default now()
 );
 
+create index if not exists idx_vendor_master_name on vendor_master(vendor_name);
+create index if not exists idx_po_commitment_rows_project on po_commitment_rows(project_id, po_number, wbs_code);
+create index if not exists idx_po_commitment_rows_project on po_commitment_rows(project_id, po_number, wbs_code);
 create index if not exists idx_cn41_uploads_project_latest on cn41_uploads(project_id, is_latest desc, upload_date desc);
 create index if not exists idx_gr55_uploads_project_latest on gr55_uploads(project_id, is_latest desc, upload_date desc);
 create index if not exists idx_sales_order_uploads_project_latest on sales_order_uploads(project_id, is_latest desc, upload_date desc);
@@ -339,6 +389,9 @@ create index if not exists idx_project_cost_element_control_project on project_c
 create index if not exists idx_pm_updates_project on pm_daily_updates(project_id, update_date desc);
 create index if not exists idx_risk_alerts_project on risk_alerts(project_id, severity, created_at desc);
 
+alter table po_commitment_rows enable row level security;
+alter table po_commitment_rows enable row level security;
+alter table vendor_master enable row level security;
 alter table users_profile enable row level security;
 alter table projects enable row level security;
 alter table cn41_uploads enable row level security;

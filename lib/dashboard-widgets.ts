@@ -55,7 +55,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // --- Revenue Trends ---
   { id: 'trends.kpis', tab: 'trends', group: 'Revenue Trends · KPIs', title: 'KPI Summary Cards', span: 12 },
   { id: 'trends.chart.revenueTrend', tab: 'trends', group: 'Revenue Trends · Charts', title: 'Project Revenue Trend', span: 6 },
-  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Revenue Trends · Charts', title: 'Forecast Trend', span: 6 },
+  { id: 'trends.chart.forecastTrend', tab: 'trends', group: 'Revenue Trends · Charts', title: 'Cost vs Budget Trend', span: 6 },
   { id: 'trends.section.revenueByWbsMatrix', tab: 'trends', group: 'Revenue Trends · Sections', title: 'Revenue by WBS & Period', span: 12 },
   { id: 'trends.section.drilldown', tab: 'trends', group: 'Revenue Trends · Sections', title: 'Transaction Drill-down', span: 12 },
 
@@ -64,7 +64,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'costTrends.chart.costTrendCumulative', tab: 'costTrends', group: 'Cost Trends · Charts', title: 'Project Cost Trend (Cumulative)', span: 6 },
   { id: 'costTrends.chart.costTrendPeriod', tab: 'costTrends', group: 'Cost Trends · Charts', title: 'Project Cost Trend (Period)', span: 6 },
   { id: 'costTrends.section.costElementAnalysis', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Cost Element Analysis', span: 12 },
-  { id: 'costTrends.section.subcontractorPo', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Subcontractor Performance (PO)', span: 12 },
+  { id: 'costTrends.section.subcontractorPo', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'PO & Vendor Spending', span: 12 },
   { id: 'costTrends.section.costByWbsMatrix', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Cost by WBS & Period', span: 12 },
   { id: 'costTrends.section.drilldown', tab: 'costTrends', group: 'Cost Trends · Sections', title: 'Transaction Drill-down', span: 12 },
 ];

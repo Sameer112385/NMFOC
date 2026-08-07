@@ -13,6 +13,7 @@ import type {
   ProjectCostElementControl,
   ProjectSubcontract,
   ProjectWbsMaster,
+  PoCommitmentRow,
   RevenueWBS,
   RiskAlert,
 } from '@/lib/types';
@@ -34,6 +35,7 @@ type LocalDb = {
   project_manpower_rates: ProjectManpowerRate[];
   project_material_master: ProjectMaterialMaster[];
   project_cost_element_control: ProjectCostElementControl[];
+  po_commitment_rows: PoCommitmentRow[];
   pm_daily_updates: DailyUpdate[];
   simulation_snapshots: Array<any>;
   risk_alerts: RiskAlert[];
@@ -68,6 +70,7 @@ async function ensureDb(): Promise<LocalDb> {
       project_manpower_rates: parsed.project_manpower_rates ?? [],
       project_material_master: parsed.project_material_master ?? [],
       project_cost_element_control: parsed.project_cost_element_control ?? [],
+      po_commitment_rows: parsed.po_commitment_rows ?? [],
       pm_daily_updates: (parsed.pm_daily_updates ?? []).map((item) => ({
         ...item,
         material_sap_posted: item.material_sap_posted ?? false,
@@ -115,6 +118,7 @@ async function ensureDb(): Promise<LocalDb> {
       project_manpower_rates: [],
       project_material_master: [],
       project_cost_element_control: [],
+      po_commitment_rows: [],
       pm_daily_updates: [],
       simulation_snapshots: [],
       risk_alerts: [],
@@ -178,6 +182,7 @@ export async function deleteProject(projectId: string) {
   db.project_manpower_rates = db.project_manpower_rates.filter((x) => x.project_id !== projectId);
   db.project_material_master = db.project_material_master.filter((x) => x.project_id !== projectId);
   db.project_cost_element_control = db.project_cost_element_control.filter((x) => x.project_id !== projectId);
+  db.po_commitment_rows = db.po_commitment_rows.filter((x) => x.project_id !== projectId);
   db.pm_daily_updates = db.pm_daily_updates.filter((x) => x.project_id !== projectId);
   db.simulation_snapshots = db.simulation_snapshots.filter((x) => x.project_id !== projectId);
   db.risk_alerts = db.risk_alerts.filter((x) => x.project_id !== projectId);
@@ -241,6 +246,17 @@ export async function readRevenueRows(projectId?: string) {
   return projectId ? db.revenue_wbs.filter((x) => x.project_id === projectId) : db.revenue_wbs;
 }
 
+export async function readLocalPoCommitmentRows(projectId?: string) {
+  const db = await ensureDb();
+  return projectId ? db.po_commitment_rows.filter((row) => row.project_id === projectId) : db.po_commitment_rows;
+}
+
+export async function replaceLocalPoCommitmentRows(projectId: string, rows: PoCommitmentRow[]) {
+  const db = await ensureDb();
+  db.po_commitment_rows = [...db.po_commitment_rows.filter((row) => row.project_id !== projectId), ...rows.map((row) => ({ ...row, id: crypto.randomUUID(), project_id: projectId }))];
+  await saveDb(db);
+  return rows;
+}
 export async function readGr55Rows(projectId?: string) {
   const db = await ensureDb();
   return projectId ? db.gr55_rows.filter((x) => x.project_id === projectId) : db.gr55_rows;

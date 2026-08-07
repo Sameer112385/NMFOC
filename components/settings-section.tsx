@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   KeyRound,
   ShieldCheck,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { surfaceCard } from "@/components/ui";
@@ -24,6 +25,7 @@ const ICONS = {
   danger: AlertTriangle,
   env: KeyRound,
   roles: ShieldCheck,
+  vendors: Building2,
 } as const;
 
 export type SettingsIcon = keyof typeof ICONS;

@@ -16,6 +16,7 @@ import {
   YAxis,
   Tooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
 } from "recharts";
 import {
@@ -36,6 +37,7 @@ import {
   X,
   LayoutGrid,
   Loader2,
+  Download,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { buildTrendData, normalizeCode, type TrendDataPoint } from "@/lib/trends";
@@ -53,6 +55,7 @@ import type {
   ProjectWbsMaster,
   RevenueWBS,
   HistoricalRevenueRow,
+  PoCommitmentRow,
 } from "@/lib/types";
 
 // Design constants matching globals.css
@@ -119,6 +122,7 @@ interface TrendAnalysisPanelProps {
   projects: Project[];
   costRows: RevenueWBS[];
   gr55Rows: Gr55CostRow[];
+  poCommitments?: PoCommitmentRow[];
   updates: DailyUpdate[];
   wbsMaster: ProjectWbsMaster[];
   costElementControl: ProjectCostElementControl[];
@@ -436,6 +440,7 @@ export function TrendAnalysisPanel({
   projects,
   costRows,
   gr55Rows,
+  poCommitments = [],
   updates,
   wbsMaster,
   costElementControl,
@@ -457,10 +462,22 @@ export function TrendAnalysisPanel({
   const [startPeriod, setStartPeriod] = useState<string>("");
   const [costViewMode, setCostViewMode] = useState<"all" | "subcontractor" | "material" | "manpower">("all");
   const [endPeriod, setEndPeriod] = useState<string>("");
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [spendingTableTab, setSpendingTableTab] = useState<"vendor" | "po">("vendor");
+  const [spendingSort, setSpendingSort] = useState<"provision" | "actual" | "remaining" | "utilization" | "name" | "poCount">("actual");
+  const [spendingSortDirection, setSpendingSortDirection] = useState<"asc" | "desc">("desc");
+  const toggleSpendingSort = (key: "provision" | "actual" | "remaining" | "utilization" | "name" | "poCount") => {
+    if (spendingSort === key) setSpendingSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+    else { setSpendingSort(key); setSpendingSortDirection(key === "name" ? "asc" : "desc"); }
+  };
 
   // Chart Config Toggles
   const [costChartMode, setCostChartMode] = useState<"cumulative" | "period">("cumulative");
   const [revenueChartMode, setRevenueChartMode] = useState<"cumulative" | "period">("cumulative");
+  const trendChartScrollRefs = useRef<HTMLDivElement[]>([]);
+  const registerTrendChartScroller = (node: HTMLDivElement | null) => {
+    if (node && !trendChartScrollRefs.current.includes(node)) trendChartScrollRefs.current.push(node);
+  };
 
   // Interactive Drill-Down State
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
@@ -555,6 +572,17 @@ export function TrendAnalysisPanel({
     return result;
   }, [baseTrendData, startPeriod, endPeriod]);
 
+  // Presentation charts open at the current calendar year (or the latest data if it is older).
+  useEffect(() => {
+    const latestYear = trendData.length ? trendData[trendData.length - 1]!.period.slice(0, 4) : "";
+    const currentYearIndex = trendData.findIndex((point) => point.period.startsWith(latestYear));
+    const frame = requestAnimationFrame(() => {
+      trendChartScrollRefs.current.filter((node) => node.isConnected).forEach((node) => {
+        node.scrollLeft = currentYearIndex >= 0 ? Math.max(0, currentYearIndex * 108 - 56) : node.scrollWidth;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [trendData]);
   // The one period the engine values with POC instead of posted actuals. Taken from the
   // UNFILTERED series: narrowing the start/end range hides this column but does not move it.
   const enginePocPeriod = useMemo(
@@ -946,6 +974,98 @@ export function TrendAnalysisPanel({
     };
   }, [gr55Rows, updates, costRows, selectedWbs, wbsMaster, costElementControl, periodType, trendData, costViewMode, selectedPos]);
 
+  const poSpending = useMemo(() => {
+    type PoSpend = { po: string; vendorId: string; vendorName: string; provision: number; actual: number; remaining: number; utilization: number; status: string; wbs: Set<string>; activities: Map<string, number> };
+    const byPo = new Map<string, PoSpend>();
+    poCommitments
+      .filter((row) => String(row.deletion_indicator ?? '').trim().toUpperCase() !== 'L')
+      .filter((row) => selectedPos.length === 0 || selectedPos.includes(row.po_number))
+      .forEach((row) => {
+        const po = String(row.po_number ?? '').trim();
+        if (!po) return;
+        const existing = byPo.get(po) ?? {
+          po,
+          vendorId: String(row.vendor_id ?? '').trim(),
+          vendorName: String(row.vendor_name ?? '').trim() || 'Vendor not mapped',
+          provision: 0,
+          actual: 0,
+          remaining: 0,
+          utilization: 0,
+          status: '',
+          wbs: new Set<string>(),
+          activities: new Map<string, number>(),
+        };
+        const provision = Number(row.net_order_value ?? 0);
+        const activity = String(row.material_group ?? '').trim() || String(row.activity ?? '').trim() || String(row.short_text ?? '').trim() || 'Unclassified';
+        existing.provision += provision;
+        if (String(row.deletion_indicator ?? '').trim().toUpperCase() === 'S') existing.status = 'Locked';
+        if (row.wbs_code) existing.wbs.add(row.wbs_code);
+        existing.activities.set(activity, (existing.activities.get(activity) ?? 0) + provision);
+        byPo.set(po, existing);
+      });
+
+    gr55Rows.forEach((row) => {
+      const po = String(row.purchasing_document ?? '').trim();
+      const summary = byPo.get(po);
+      if (summary) summary.actual += Number(row.amount ?? 0);
+    });
+
+    const poRows = Array.from(byPo.values()).map((row) => ({
+      ...row,
+      remaining: row.provision - row.actual,
+      utilization: row.provision > 0 ? (row.actual / row.provision) * 100 : 0,
+    })).sort((a, b) => b.provision - a.provision);
+
+    const vendors = new Map<string, { name: string; provision: number; actual: number; pos: Set<string> }>();
+    const activities = new Map<string, { provision: number; actual: number }>();
+    poRows.forEach((row) => {
+      const vendorKey = row.vendorId || row.vendorName || 'unmapped';
+      const vendor = vendors.get(vendorKey) ?? { name: row.vendorName, provision: 0, actual: 0, pos: new Set<string>() };
+      vendor.provision += row.provision;
+      vendor.actual += row.actual;
+      vendor.pos.add(row.po);
+      vendors.set(vendorKey, vendor);
+      const activityProvision = Array.from(row.activities.values()).reduce((sum, value) => sum + value, 0);
+      row.activities.forEach((provision, activity) => {
+        const item = activities.get(activity) ?? { provision: 0, actual: 0 };
+        item.provision += provision;
+        item.actual += activityProvision > 0 ? row.actual * (provision / activityProvision) : 0;
+        activities.set(activity, item);
+      });
+    });
+
+    const vendorRows = Array.from(vendors.entries()).map(([id, row]) => ({
+      id,
+      name: row.name,
+      provision: row.provision,
+      actual: row.actual,
+      remaining: row.provision - row.actual,
+      utilization: row.provision > 0 ? (row.actual / row.provision) * 100 : 0,
+      poCount: row.pos.size,
+    })).sort((a, b) => b.actual - a.actual);
+    const activityRows = Array.from(activities.entries()).map(([name, row]) => ({
+      name,
+      provision: row.provision,
+      actual: row.actual,
+      remaining: row.provision - row.actual,
+      utilization: row.provision > 0 ? (row.actual / row.provision) * 100 : 0,
+    })).sort((a, b) => b.provision - a.provision);
+    const provision = poRows.reduce((sum, row) => sum + row.provision, 0);
+    const actual = poRows.reduce((sum, row) => sum + row.actual, 0);
+    return { poRows, vendorRows, activityRows, provision, actual, remaining: provision - actual, utilization: provision > 0 ? (actual / provision) * 100 : 0 };
+  }, [poCommitments, gr55Rows, selectedPos]);
+  const visiblePoRows = useMemo(
+    () => selectedVendorId ? poSpending.poRows.filter((row) => (row.vendorId || row.vendorName || 'unmapped') === selectedVendorId) : poSpending.poRows,
+    [poSpending.poRows, selectedVendorId],
+  );
+  const sortedVendorRows = useMemo(() => [...poSpending.vendorRows].sort((a, b) => {
+    const comparison = spendingSort === "name" ? a.name.localeCompare(b.name) : Number((a as any)[spendingSort] ?? 0) - Number((b as any)[spendingSort] ?? 0);
+    return spendingSortDirection === "asc" ? comparison : -comparison;
+  }), [poSpending.vendorRows, spendingSort, spendingSortDirection]);
+  const sortedVisiblePoRows = useMemo(() => [...visiblePoRows].sort((a, b) => {
+    const comparison = spendingSort === "name" ? a.po.localeCompare(b.po) : Number((a as any)[spendingSort] ?? 0) - Number((b as any)[spendingSort] ?? 0);
+    return spendingSortDirection === "asc" ? comparison : -comparison;
+  }), [visiblePoRows, spendingSort, spendingSortDirection]);
   // Subcontractor Performance by PO Number
   const poPerformanceData = useMemo(() => {
     if (costViewMode !== "subcontractor") return null;
@@ -1433,6 +1553,30 @@ export function TrendAnalysisPanel({
     );
   };
 
+  const exportPoSummaryExcel = () => {
+    if (!poPerformanceData?.poTotals.length) return;
+    const rows = poPerformanceData.poTotals.map((entry) => {
+      const meta = poPerformanceData.poMeta.get(entry.po);
+      const percentage = poPerformanceData.grandTotal > 0 ? entry.value / poPerformanceData.grandTotal : 0;
+      return {
+        'PO Number': entry.po,
+        'WBS Scope': meta ? Array.from(meta.wbsCodes).join(', ') : '',
+        'First Posting': meta?.minDate ?? '',
+        'Last Posting': meta?.maxDate ?? '',
+        'Total Amount (SAR)': entry.value,
+        '% of Subcontractor Spend': percentage,
+      };
+    });
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 24 }];
+    for (let row = 2; row <= rows.length + 1; row += 1) {
+      worksheet[`E${row}`].z = '#,##0.00';
+      worksheet[`F${row}`].z = '0.0%';
+    }
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'PO Summary');
+    XLSX.writeFile(workbook, `PO_Summary_${currentProjectCode}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
   const handlePrintPDF = () => {
     window.print();
   };
@@ -1473,7 +1617,7 @@ export function TrendAnalysisPanel({
 
   const isTrendVisible = (id: string): boolean => {
     if (isWidgetHidden(dashboardLayout, id)) return false;
-    if ((id === "trends.section.subcontractorPo" || id === "costTrends.section.subcontractorPo") && (costViewMode !== "subcontractor" || !poPerformanceData)) return false;
+    // Keep PO & Vendor Spending visible so missing-source guidance is actionable.
     return true;
   };
 
@@ -1536,7 +1680,7 @@ export function TrendAnalysisPanel({
 
       case "costTrends.kpis":
         return (
-          <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+          <div className="h-full grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             {/* Planned Cost */}
             <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-accent/35 to-transparent" />
@@ -1573,7 +1717,21 @@ export function TrendAnalysisPanel({
               <div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(kpis.inMonthCost)}</div>
               <div className="mt-2 text-xs text-muted/70"><span>Periodic cost for {kpis.activePeriodLabel}</span></div>
             </div>
-          </div>
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-violet-400/45 to-transparent" />
+              <div className="flex items-center justify-between text-muted"><span className="section-kicker">PO Count</span><span className="text-[9px] font-bold text-violet-600 bg-violet-500/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">PO</span></div>
+              <div className="grow" /><div className="data-value text-[1.22rem] font-semibold text-text">{poSpending.poRows.length}</div><div className="mt-2 text-xs text-muted/70"><span>Active POs for this project</span></div>
+            </div>
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-violet-400/45 to-transparent" />
+              <div className="flex items-center justify-between text-muted"><span className="section-kicker">Subcontractor Count</span><span className="text-[9px] font-bold text-violet-600 bg-violet-500/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Vendor</span></div>
+              <div className="grow" /><div className="data-value text-[1.22rem] font-semibold text-text">{poSpending.vendorRows.length}</div><div className="mt-2 text-xs text-muted/70"><span>Unique vendors across active POs</span></div>
+            </div>
+            <div className="surface-card p-4 flex flex-col relative overflow-hidden border border-line/80 bg-panel/95 rounded-3xl shadow-card print-card">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-emerald-400/45 to-transparent" />
+              <div className="flex items-center justify-between text-muted"><span className="section-kicker">Remaining PO Balance</span><span className="text-[9px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Commitment</span></div>
+              <div className="grow" /><div className="data-value text-[1.22rem] font-semibold text-text">{formatCurrency(poSpending.remaining)}</div><div className="mt-2 text-xs text-muted/70"><span>Issued provision less GR55 actual</span></div>
+            </div>          </div>
         );
 
       case "costTrends.chart.costTrendCumulative":
@@ -1584,10 +1742,15 @@ export function TrendAnalysisPanel({
                 <h3 className="text-sm font-bold text-text">Project Cost Trend (Cumulative)</h3>
                 <p className="text-[11px] text-muted">SAP actual GR55 transaction history over time (Cumulative).</p>
               </div>
+              <div className="text-right">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-muted">Management Cost to Date</div>
+                <div className="font-mono text-sm font-bold text-warning">{formatCurrency(kpis.totalActualCost)}</div>
+              </div>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} onClick={handleChartClick}>
+            <div ref={registerTrendChartScroller} className="h-80 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="h-full" style={{ width: Math.max(760, trendData.length * 108) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
@@ -1598,9 +1761,12 @@ export function TrendAnalysisPanel({
                   <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                   <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                   <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                  <Area type="monotone" dataKey="cumulativeForecastCost" stroke="#f59e0b" strokeWidth={2.5} fillOpacity={1} fill="url(#costGrad)" name="Cumulative Cost" />
-                </AreaChart>
-              </ResponsiveContainer>
+                  <Area type="monotone" dataKey="cumulativeForecastCost" stroke="#f59e0b" strokeWidth={2.5} fillOpacity={1} fill="url(#costGrad)" name="Cumulative Cost" dot={{ r: 2, fill: "#f59e0b", strokeWidth: 0 }}>
+                    <LabelList dataKey="cumulativeForecastCost" position="top" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#9a5b00" fontSize={9} fontWeight={700} />
+                  </Area>
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         );
@@ -1613,10 +1779,15 @@ export function TrendAnalysisPanel({
                 <h3 className="text-sm font-bold text-text">Project Cost Trend (Period)</h3>
                 <p className="text-[11px] text-muted">SAP actual GR55 transaction history over time (Periodic).</p>
               </div>
+              <div className="text-right">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-muted">Current Period Cost</div>
+                <div className="font-mono text-sm font-bold text-warning">{formatCurrency(kpis.inMonthCost)}</div>
+              </div>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} onClick={handleChartClick}>
+            <div ref={registerTrendChartScroller} className="h-80 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="h-full" style={{ width: Math.max(760, trendData.length * 108) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="costPeriodGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.12} />
@@ -1627,9 +1798,12 @@ export function TrendAnalysisPanel({
                   <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                   <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                   <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                  <Area type="monotone" dataKey="forecastCost" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#costPeriodGrad)" name="Period Cost" />
-                </AreaChart>
-              </ResponsiveContainer>
+                  <Area type="monotone" dataKey="forecastCost" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#costPeriodGrad)" name="Period Cost" dot={{ r: 2, fill: "#f59e0b", strokeWidth: 0 }}>
+                    <LabelList dataKey="forecastCost" position="top" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#9a5b00" fontSize={9} fontWeight={700} />
+                  </Area>
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         );
@@ -1647,10 +1821,11 @@ export function TrendAnalysisPanel({
                 <button onClick={() => setRevenueChartMode("period")} className={`px-2.5 py-1 text-[9px] font-bold uppercase rounded-md transition ${revenueChartMode === "period" ? "bg-accent text-white" : "text-muted hover:text-text"}`}>Period</button>
               </div>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
+            <div ref={registerTrendChartScroller} className="h-80 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="h-full" style={{ width: Math.max(760, trendData.length * 108) }}>
+                <ResponsiveContainer width="100%" height="100%">
                 {revenueChartMode === "cumulative" ? (
-                  <AreaChart data={trendData} onClick={handleChartClick}>
+                  <AreaChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
@@ -1661,10 +1836,10 @@ export function TrendAnalysisPanel({
                     <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                     <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                     <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                    <Area type="monotone" dataKey="cumulativeForecastRevenue" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#revGrad)" name="Cumulative Revenue" />
+                    <Area type="monotone" dataKey="cumulativeForecastRevenue" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#revGrad)" name="Cumulative Revenue" dot={{ r: 2, fill: "#10b981", strokeWidth: 0 }}><LabelList dataKey="cumulativeForecastRevenue" position="top" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#087f5b" fontSize={9} fontWeight={700} /></Area>
                   </AreaChart>
                 ) : (
-                  <AreaChart data={trendData} onClick={handleChartClick}>
+                  <AreaChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="revPeriodGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.12} />
@@ -1675,10 +1850,11 @@ export function TrendAnalysisPanel({
                     <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                     <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                     <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
-                    <Area type="monotone" dataKey="forecastRevenue" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#revPeriodGrad)" name="Period Revenue" />
+                    <Area type="monotone" dataKey="forecastRevenue" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#revPeriodGrad)" name="Period Revenue" dot={{ r: 2, fill: "#10b981", strokeWidth: 0 }}><LabelList dataKey="forecastRevenue" position="top" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#087f5b" fontSize={9} fontWeight={700} /></Area>
                   </AreaChart>
                 )}
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         );
@@ -1690,19 +1866,21 @@ export function TrendAnalysisPanel({
               <h3 className="text-sm font-bold text-text">Cost vs Revenue Growth</h3>
               <p className="text-[11px] text-muted">Contrast SAP actual cost against recognized and forecast revenues.</p>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} onClick={handleChartClick}>
+            <div ref={registerTrendChartScroller} className="h-80 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="h-full" style={{ width: Math.max(760, trendData.length * 108) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
                   <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                   <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                   <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Legend verticalAlign="top" height={32} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 10 }} />
-                  <Line type="monotone" dataKey="cumulativeActualCost" stroke="#f59e0b" strokeWidth={2} dot={false} name="Actual Cost (SAP)" />
-                  <Line type="monotone" dataKey="cumulativeRecognizedRevenue" stroke="#3b82f6" strokeWidth={2} dot={false} name="Recognized Revenue" />
-                  <Line type="monotone" dataKey="cumulativeForecastRevenue" stroke="#10b981" strokeWidth={2} dot={false} name="Forecast Revenue" />
+                  <Line type="monotone" dataKey="cumulativeActualCost" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2, fill: "#f59e0b", strokeWidth: 0 }} name="Actual Cost (SAP)"><LabelList dataKey="cumulativeActualCost" position="bottom" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#9a5b00" fontSize={8} /></Line>
+                  <Line type="monotone" dataKey="cumulativeRecognizedRevenue" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2, fill: "#3b82f6", strokeWidth: 0 }} name="Recognized Revenue"><LabelList dataKey="cumulativeRecognizedRevenue" position="top" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#1d4ed8" fontSize={8} /></Line>
+                  <Line type="monotone" dataKey="cumulativeForecastRevenue" stroke="#10b981" strokeWidth={2} dot={{ r: 2, fill: "#10b981", strokeWidth: 0 }} name="Forecast Revenue"><LabelList dataKey="cumulativeForecastRevenue" position="insideTop" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#087f5b" fontSize={8} /></Line>
                 </LineChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         );
@@ -1710,23 +1888,32 @@ export function TrendAnalysisPanel({
       case "trends.chart.forecastTrend":
         return (
           <div className="h-full surface-card p-5 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
-            <div className="border-b border-line/30 pb-3 mb-4">
-              <h3 className="text-sm font-bold text-text">Forecast Trend</h3>
-              <p className="text-[11px] text-muted">Project cost limits against baseline budget (Planned Cost).</p>
+            <div className="flex items-center justify-between gap-4 border-b border-line/30 pb-3 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-text">Cost vs Budget Trend</h3>
+                <p className="text-[11px] text-muted">Actual cost against the project baseline budget (Planned Cost).</p>
+              </div>
+              <div className="flex shrink-0 gap-4 text-right">
+                <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted">Actual</div><div className="font-mono text-xs font-bold text-accent">{formatCurrency(kpis.totalActualCost)}</div></div>
+
+                <div><div className="text-[9px] font-bold uppercase tracking-wider text-muted">Budget</div><div className="font-mono text-xs font-bold text-text">{formatCurrency(kpis.plannedCost)}</div></div>
+              </div>
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} onClick={handleChartClick}>
+            <div ref={registerTrendChartScroller} className="h-80 overflow-x-auto pb-2 scrollbar-thin">
+              <div className="h-full" style={{ width: Math.max(760, trendData.length * 108) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} onClick={handleChartClick} margin={{ top: 22, right: 72, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
                   <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
                   <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
                   <Tooltip content={<CustomChartTooltip formatter={formatTooltipValue} />} />
                   <Legend verticalAlign="top" height={32} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 10 }} />
-                  <Line type="monotone" dataKey="cumulativeActualCost" stroke="#3b82f6" strokeWidth={2} dot={false} name="Actual Cost" />
-                  <Line type="monotone" dataKey="cumulativeForecastCost" stroke={hasProjectedOverrun ? "#ef4444" : "#10b981"} strokeWidth={2.5} dot={false} name="Forecast Cost" />
-                  <Line type="monotone" dataKey="plannedCost" stroke="#6b7280" strokeDasharray="5 5" strokeWidth={2} dot={false} name="Planned Cost (Budget)" />
+                  <Line type="monotone" dataKey="cumulativeActualCost" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2, fill: "#3b82f6", strokeWidth: 0 }} name="Actual Cost"><LabelList dataKey="cumulativeActualCost" position="bottom" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#1d4ed8" fontSize={8} /></Line>
+
+                  <Line type="monotone" dataKey="plannedCost" stroke="#6b7280" strokeDasharray="5 5" strokeWidth={2} dot={{ r: 2, fill: "#6b7280", strokeWidth: 0 }} name="Planned Cost (Budget)"><LabelList dataKey="plannedCost" position="insideTop" formatter={(value: number) => `SAR ${formatCompactNumber(Number(value))}`} fill="#4b5563" fontSize={8} /></Line>
                 </LineChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         );
@@ -1839,235 +2026,30 @@ export function TrendAnalysisPanel({
 
       case "trends.section.subcontractorPo":
       case "costTrends.section.subcontractorPo":
+        if (!poSpending.poRows.length) return (
+          <div className="h-full rounded-3xl border border-dashed border-line bg-panel/30 p-10 text-center text-sm text-muted">Upload an ME2J report with WBS Element to show PO and Vendor Spending.</div>
+        );
         return (
           <div className="h-full surface-card p-6 border border-line/45 bg-panel/30 shadow-card rounded-3xl print-card">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-line/30 pb-4 mb-6">
-              <div>
-                <h3 className="text-base font-bold text-text flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-accent" />
-                  Subcontractor Performance by PO
-                </h3>
-                <p className="text-xs text-muted mt-0.5">Actual cost breakdown and timeline by Purchasing Document (PO Number) from GR55.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                {poOptions.length > 1 && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted shrink-0">PO Number:</span>
-                    <div style={{ width: '260px', minWidth: '260px' }} className="shrink-0">
-                      <MultiWbsSelect selectedValues={selectedPos} onChange={(vals) => { setSelectedPos(vals); setSelectedPeriod(null); }}
-                        options={poOptions.filter(Boolean).map((po) => ({ value: po, label: po }))} placeholder="All POs" />
-                    </div>
-                  </div>
-                )}
-                <div className="rounded-xl border border-accent/25 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent flex items-center gap-1.5">
-                  <span className="text-muted font-medium">Active POs:</span>
-                  {poPerformanceData!.uniquePOs.filter((p) => p !== "No PO").length}
-                </div>
-                {poPerformanceData!.poTotals.length > 0 && (
-                  <div className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-1.5 text-xs font-semibold text-warning flex items-center gap-2">
-                    <Info className="h-3.5 w-3.5 shrink-0" />
-                    <span><strong>{poPerformanceData!.poTotals[0]!.po}</strong> leads at <strong>{poPerformanceData!.grandTotal > 0 ? ((poPerformanceData!.poTotals[0]!.value / poPerformanceData!.grandTotal) * 100).toFixed(1) : "0.0"}%</strong> of subcontractor spend.</span>
-                  </div>
-                )}
-              </div>
+            <div className="flex flex-col gap-4 border-b border-line/30 pb-4 lg:flex-row lg:items-center lg:justify-between">
+              <div><h3 className="text-base font-bold text-text flex items-center gap-2"><Briefcase className="h-4 w-4 text-accent" />PO &amp; Vendor Spending</h3><p className="mt-0.5 text-xs text-muted">ME2J provides issued provision. GR55 provides posted actual cost, matched by PO number.</p></div>
+              {poOptions.length > 1 ? <div className="w-[260px] shrink-0"><MultiWbsSelect selectedValues={selectedPos} onChange={(values) => { setSelectedPos(values); setSelectedPeriod(null); }} options={poOptions.filter(Boolean).map((po) => ({ value: po, label: po }))} placeholder="All POs" /></div> : null}
             </div>
-            <div className="grid gap-6 lg:grid-cols-3 mb-8">
-              <div className="lg:col-span-2 space-y-2">
-                <h4 className="text-xs font-bold text-text">Subcontractor Spend by PO Over Time</h4>
-                <p className="text-[10px] text-muted">Stacked actual cost per PO number per period.</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={poPerformanceData!.chartData} onClick={handleChartClick}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-line) / 0.3)" />
-                      <XAxis dataKey="period" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} />
-                      <YAxis stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
-                      <Tooltip content={<CustomChartTooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />} />
-                      <Legend verticalAlign="top" height={36} iconType="circle" iconSize={6} wrapperStyle={{ fontSize: 9 }} />
-                      {poPerformanceData!.uniquePOs.map((po, index) => (
-                        <Bar key={po} dataKey={po} stackId="po" fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} name={po} />
-                      ))}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-text">PO Spending Ranking</h4>
-                <p className="text-[10px] text-muted">Total subcontractor cost ranked by PO.</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={poPerformanceData!.poTotals.map((x) => ({ name: x.po, value: x.value }))} layout="vertical" margin={{ left: 10, right: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgb(var(--color-line) / 0.3)" />
-                      <XAxis type="number" stroke="rgb(var(--color-muted) / 0.8)" fontSize={10} tickLine={false} tickFormatter={formatYAxis} />
-                      <YAxis dataKey="name" type="category" stroke="rgb(var(--color-muted) / 0.8)" fontSize={9} tickLine={false} width={90}
-                        tickFormatter={(tick: string) => (tick.length > 14 ? `${tick.slice(0, 14)}…` : tick)} />
-                      <Tooltip content={<CustomChartTooltip formatter={(value: number) => [formatCurrency(value), "Total Cost"]} />} />
-                      <Bar dataKey="value" name="Total Cost" radius={[0, 4, 4, 0]}>
-                        {poPerformanceData!.poTotals.map((entry, index) => (
-                          <Cell key={`po-cell-${index}`} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {[['PO Issued Provision', poSpending.provision], ['GR55 Actual Cost', poSpending.actual], ['Remaining PO Balance', poSpending.remaining], ['PO Utilization', poSpending.utilization, true], ['Active POs', poSpending.poRows.length, 'count']].map(([label, value, type]) => <div key={String(label)} className="rounded-xl border border-line/50 bg-panel p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</div><div className="mt-2 font-mono text-base font-bold text-text">{type === true ? `${Number(value).toFixed(2)}%` : type === 'count' ? String(value) : formatCurrency(Number(value))}</div></div>)}
             </div>
-            <div>
-              <h4 className="text-xs font-bold text-text mb-3">PO Summary</h4>
-              <div className="overflow-x-auto rounded-xl border border-line/40">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-line/50 bg-panel2/60 text-[10px] uppercase font-bold text-muted tracking-wider">
-                      <th className="py-2.5 px-4">PO Number</th><th className="py-2.5 px-4">WBS Scope</th><th className="py-2.5 px-4">First Posting</th><th className="py-2.5 px-4">Last Posting</th><th className="py-2.5 px-4 text-right">Total Amount</th><th className="py-2.5 px-4 text-right">% of Sub. Spend</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line/35 text-xs font-medium text-text">
-                    {poPerformanceData!.poTotals.map((entry, index) => {
-                      const meta = poPerformanceData!.poMeta.get(entry.po);
-                      const pct = poPerformanceData!.grandTotal > 0 ? (entry.value / poPerformanceData!.grandTotal) * 100 : 0;
-                      return (
-                        <tr key={entry.po} className="hover:bg-panel2/35 transition">
-                          <td className="py-2.5 px-4"><div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }} /><span className="font-mono text-accent font-bold">{entry.po}</span></div></td>
-                          <td className="py-2.5 px-4 text-muted">{meta ? Array.from(meta.wbsCodes).slice(0, 3).join(", ") + (meta.wbsCodes.size > 3 ? ` +${meta.wbsCodes.size - 3}` : "") : "-"}</td>
-                          <td className="py-2.5 px-4 font-mono text-muted">{meta?.minDate ?? "-"}</td>
-                          <td className="py-2.5 px-4 font-mono text-muted">{meta?.maxDate ?? "-"}</td>
-                          <td className="py-2.5 px-4 text-right font-mono font-bold">{formatCurrency(entry.value)}</td>
-                          <td className="py-2.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <div className="w-16 h-1.5 rounded-full bg-line/40 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }} /></div>
-                              <span className="font-bold text-xs w-10 text-right">{pct.toFixed(1)}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {poPerformanceData!.poTotals.length === 0 && (
-                      <tr><td colSpan={6} className="py-10 text-center text-muted text-xs">No subcontractor postings found. Upload GR55 data with Purchasing Document references.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        );
+            <div className="mt-7">
+              <div className="rounded-2xl border border-line/45 bg-panel/55 p-4"><div className="mb-3"><h4 className="text-sm font-bold text-text">Vendor PO Utilization</h4><p className="text-[11px] text-muted">Each full bar is issued provision: GR55 actual cost versus remaining PO balance.</p></div><div className="h-80"><ResponsiveContainer width="100%" height="100%"><BarChart data={[...poSpending.vendorRows].sort((a, b) => b.provision - a.provision).slice(0, 12)} layout="vertical" margin={{ left: 10, right: 20 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgb(var(--color-line) / 0.3)" /><XAxis type="number" tickFormatter={formatYAxis} fontSize={10} /><YAxis dataKey="name" type="category" width={145} fontSize={10} tickFormatter={(value: string) => value.length > 25 ? `${value.slice(0, 25)}...` : value} /><Tooltip content={<CustomChartTooltip formatter={(value: number, name: string) => [formatCurrency(value), name]} />} /><Legend verticalAlign="top" height={28} iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} /><Bar dataKey="actual" stackId="provision" name="GR55 Actual Cost" fill="#10b981" radius={[4, 0, 0, 4]} /><Bar dataKey="remaining" stackId="provision" name="Remaining PO Balance" fill="rgb(var(--color-line) / 0.65)" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></div>
 
-      case "trends.section.revenueByWbsMatrix":
-        return (
-          <div className="h-full relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-line/30 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-text">Revenue by WBS &amp; Period</h3>
-                <p className="mt-1 text-xs text-muted/70">{wbsRevenueMatrix.rows.length} WBS element{wbsRevenueMatrix.rows.length === 1 ? "" : "s"} across {wbsRevenueMatrix.periods.length} period{wbsRevenueMatrix.periods.length === 1 ? "" : "s"}. Column totals match the trend charts above.</p>
-              </div>
-              <div className="no-print flex items-center gap-4">
-                <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-muted">
-                  <input type="checkbox" checked={hideZeroMatrixRows} onChange={(event) => setHideZeroMatrixRows(event.target.checked)} className="h-3.5 w-3.5 rounded border-line accent-accent" />
-                  Hide empty rows
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-muted">Sort rows by</span>
-                  <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
-                    {(["code", "total"] as const).map((mode) => (
-                      <button key={mode} type="button" title={mode === "code" ? "Order rows by WBS code (ascending)" : "Order rows by total revenue (largest first)"} onClick={() => setMatrixSort(mode)}
-                        className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"}`}>
-                        {mode === "code" ? "WBS Code" : "Total ▾"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
             </div>
-            {(selectedMatrixWbs.length > 0 || wbsRevenueMatrix.hasRowFilter) && (
-              <div className="no-print mt-4 flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold text-muted">Active filters:</span>
-                {selectedMatrixWbs.length > 0 && (
-                  <button type="button" onClick={() => setSelectedMatrixWbs([])} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
-                    {selectedMatrixWbs.length} WBS selected <X className="h-3 w-3" />
-                  </button>
-                )}
-                {Object.values(columnFilters).some(isColumnFilterActive) && (
-                  <button type="button" onClick={() => setColumnFilters({})} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
-                    Clear column filters <X className="h-3 w-3" />
-                  </button>
-                )}
+            <div className="mt-7 rounded-2xl border border-line/45 bg-panel/55 p-4">
+              <div className="flex flex-col gap-3 border-b border-line/35 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><h4 className="text-sm font-bold text-text">Spending Analysis</h4><p className="text-[11px] text-muted">Compare PO issued provision with GR55 actual cost and remaining balance.</p></div>
+                <div className="flex items-center gap-2"><div className="flex rounded-lg border border-line bg-panel2 p-1"><button type="button" onClick={() => setSpendingTableTab("vendor")} className={`rounded-md px-3 py-1.5 text-[11px] font-bold transition ${spendingTableTab === "vendor" ? "bg-accent text-white" : "text-muted hover:text-text"}`}>By Vendor</button><button type="button" onClick={() => setSpendingTableTab("po")} className={`rounded-md px-3 py-1.5 text-[11px] font-bold transition ${spendingTableTab === "po" ? "bg-accent text-white" : "text-muted hover:text-text"}`}>By PO</button></div><button type="button" title="Download visible spending analysis as Excel" onClick={() => { const data = spendingTableTab === "vendor" ? poSpending.vendorRows.map((row) => ({ 'Vendor ID': row.id, 'Vendor Name': row.name, 'PO Count': row.poCount, 'Issued Provision (SAR)': row.provision, 'GR55 Actual Cost (SAR)': row.actual, 'Remaining Balance (SAR)': row.remaining, 'Utilization %': row.utilization / 100 })) : visiblePoRows.map((row) => ({ 'PO Number': row.po, 'Vendor ID': row.vendorId, 'Vendor Name': row.vendorName, 'WBS Scope': Array.from(row.wbs).join(', '), 'PO Status': row.status || 'Active', 'Issued Provision (SAR)': row.provision, 'GR55 Actual Cost (SAR)': row.actual, 'Remaining Balance (SAR)': row.remaining, 'Utilization %': row.utilization / 100 })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, spendingTableTab === "vendor" ? "Vendor Spending" : "PO Utilization"); XLSX.writeFile(wb, `${spendingTableTab === "vendor" ? "Vendor_Spending" : "PO_Utilization"}_${currentProjectCode}.xlsx`); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition hover:border-accent/50 hover:text-accent"><Download className="h-3.5 w-3.5" /></button></div>
               </div>
-            )}
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-line/40 bg-panel2/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-              {enginePocPeriod && wbsRevenueMatrix.periods.includes(enginePocPeriod) ? (
-                <span>Every column shows <strong className="text-text">actual revenue posted</strong> in that period, except <strong className="text-accent">{enginePocPeriod}&deg;</strong>, which is a <strong className="text-text">percentage-of-completion accrual</strong> (planned revenue × cost-based POC, less what that WBS already billed). The two are different measures — a row does not read left-to-right as one series. The <strong className="text-accent">{enginePocPeriod}&deg;</strong> column total is what ties to the In Month Rev card above; the grand total does not.</span>
-              ) : (
-                <span>Every column shows <strong className="text-text">actual revenue posted</strong> in that period. The percentage-of-completion accrual period{enginePocPeriod ? ` (${enginePocPeriod})` : ""} falls outside the selected range.</span>
-              )}
-            </div>
-            {wbsRevenueMatrix.hasRowFilter && (
-              <div className="mt-2 flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 px-3 py-2 text-[11px] leading-relaxed text-accent">
-                <Filter className="mt-0.5 h-3.5 w-3.5 shrink-0" fill="currentColor" />
-                <span>A row filter is active, so some WBS rows are hidden. The totals below are <strong>subtotals of the visible rows</strong> and no longer tie to the In Month Rev card. Clear the active filters to restore the full total.</span>
-              </div>
-            )}
-            {wbsRevenueMatrix.rows.length > 0 && wbsRevenueMatrix.periods.length > 0 ? (
-              <div className="mt-4 overflow-x-auto overflow-y-auto max-h-[580px]">
-                <table style={{ minWidth: 280 + wbsRevenueMatrix.periods.length * 120 + 150 }} className="w-full text-xs border-separate border-spacing-0">
-                  <thead className="text-left text-muted/80">
-                    <tr>
-                      <th className="sticky top-0 left-0 z-30 w-[280px] min-w-[280px] border-b border-line/45 bg-panel2 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] shadow-[1px_0_0_0_rgb(var(--color-line))]">
-                        <span className="inline-flex items-center">WBS<WbsColumnFilter options={matrixWbsOptions} selected={selectedMatrixWbs} onChange={setSelectedMatrixWbs} /></span>
-                      </th>
-                      {wbsRevenueMatrix.periods.map((period) => {
-                        const isPoc = period === enginePocPeriod;
-                        return (
-                          <th key={period} title={isPoc ? "Percentage-of-completion accrual — planned revenue × cost-based POC. All other columns are posted actuals." : "Actual revenue posted in this period."}
-                            className={`sticky top-0 z-20 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] whitespace-nowrap ${isPoc ? "border-b-2 border-accent text-accent" : "border-b border-line/45"}`}>
-                            <span className="inline-flex items-center justify-end">{period}{isPoc ? "°" : ""}<ColumnFilterButton period={period} value={columnFilters[period] ?? DEFAULT_COLUMN_FILTER} onChange={(next) => setColumnFilters((prev) => ({ ...prev, [period]: next }))} /></span>
-                          </th>
-                        );
-                      })}
-                      <th className="sticky top-0 z-20 border-b border-line/45 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em]">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-text font-medium">
-                    {wbsRevenueMatrix.rows.map((row) => (
-                      <tr key={row.norm} className="group">
-                        <td className="sticky left-0 z-10 w-[280px] min-w-[280px] border-b border-line/30 bg-panel px-4 py-3 shadow-[1px_0_0_0_rgb(var(--color-line))] transition group-hover:bg-panel2">
-                          <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => { setDrilldownWbs(row.norm); setSelectedPeriod(null); setDrilldownTab("sap"); setDrilldownSearch(""); setDrilldownPage(1); }}
-                              title="Show this WBS's actual cost postings"
-                              className={`font-mono whitespace-nowrap underline-offset-2 hover:underline ${drilldownWbs === row.norm ? "text-accent font-bold" : "text-accent"}`}>
-                              {row.code}
-                            </button>
-                            {row.isUnmapped && (<span title="Posted revenue on a WBS that is not present in the WBS master" className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-danger">Unmapped</span>)}
-                          </div>
-                          {row.desc && (<div className="mt-0.5 max-w-[280px] truncate text-[11px] text-muted/70" title={row.desc}>{row.desc}</div>)}
-                        </td>
-                        {row.cells.map((value, index) => (
-                          <td key={wbsRevenueMatrix.periods[index]} className={`border-b border-line/30 px-4 py-3 text-right font-mono whitespace-nowrap transition group-hover:bg-panel2/40 ${wbsRevenueMatrix.periods[index] === enginePocPeriod ? "bg-accent/5" : ""} ${value === 0 ? "text-muted/40" : value < 0 ? "text-danger" : "text-success"}`}>
-                            {value === 0 ? "—" : formatCurrency(value)}
-                          </td>
-                        ))}
-                        <td className={`border-b border-line/30 px-4 py-3 text-right font-mono font-bold whitespace-nowrap transition group-hover:bg-panel2/40 ${row.total < 0 ? "text-danger" : "text-text"}`}>{formatCurrency(row.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="font-bold text-text">
-                    <tr>
-                      <td className="sticky bottom-0 left-0 z-30 w-[280px] min-w-[280px] bg-panel2 border-t-2 border-line/65 px-4 py-3 text-[11px] uppercase tracking-wider shadow-[1px_0_0_0_rgb(var(--color-line))]">Total &middot; {wbsRevenueMatrix.rows.length} WBS</td>
-                      {wbsRevenueMatrix.columnTotals.map((total, index) => (
-                        <td key={wbsRevenueMatrix.periods[index]} className={`sticky bottom-0 z-20 bg-panel2 border-t-2 px-4 py-3 text-right font-mono whitespace-nowrap ${wbsRevenueMatrix.periods[index] === enginePocPeriod ? "text-accent border-accent" : "border-line/65"} ${total < 0 ? "text-danger" : ""}`}>{formatCurrency(total)}</td>
-                      ))}
-                      <td className="sticky bottom-0 z-20 bg-panel2 border-t-2 border-line/65 px-4 py-3 text-right font-mono whitespace-nowrap">{formatCurrency(wbsRevenueMatrix.grandTotal)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ) : (
-              <div className="py-16 text-center text-sm text-muted">
-                <div className="font-semibold text-text">No revenue to break down</div>
-                <div className="mt-1 text-xs">No revenue-generating WBS produced revenue in the selected range.</div>
-              </div>
-            )}
-          </div>
+              {spendingTableTab === "vendor" ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-panel2/60 text-[10px] uppercase tracking-wider text-muted"><tr><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("name")} className="font-bold hover:text-accent">Vendor {spendingSort === "name" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("poCount")} className="font-bold hover:text-accent">PO Count {spendingSort === "poCount" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("provision")} className="font-bold hover:text-accent">Issued Provision {spendingSort === "provision" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("actual")} className="font-bold hover:text-accent">GR55 Actual {spendingSort === "actual" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("remaining")} className="font-bold hover:text-accent">Balance {spendingSort === "remaining" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("utilization")} className="font-bold hover:text-accent">Utilization {spendingSort === "utilization" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th></tr></thead><tbody className="divide-y divide-line/35">{sortedVendorRows.map((row) => <tr key={row.id} onClick={() => { setSelectedVendorId(row.id); setSpendingTableTab("po"); }} className="cursor-pointer transition hover:bg-accent/5"><td className="px-3 py-3"><div className="font-semibold text-text">{row.name}</div><div className="font-mono text-[10px] text-muted">{row.id}</div></td><td className="px-3 py-3 text-right font-mono">{row.poCount}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.provision)}</td><td className="px-3 py-3 text-right font-mono text-success">{formatCurrency(row.actual)}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.remaining)}</td><td className="px-3 py-3"><div className="flex min-w-[145px] items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-line/45"><div className={`h-full rounded-full ${row.utilization > 100 ? "bg-danger" : row.utilization >= 80 ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.min(100, Math.max(0, row.utilization))}%` }} /></div><span className="w-11 text-right font-mono font-bold">{row.utilization.toFixed(1)}%</span></div></td></tr>)}</tbody></table></div> : <div className="mt-4 overflow-x-auto"><div className="mb-3 flex items-center justify-between text-[11px] text-muted">{selectedVendorId ? <span>Showing POs for <strong className="text-text">{poSpending.vendorRows.find((vendor) => vendor.id === selectedVendorId)?.name ?? "selected vendor"}</strong></span> : <span>Showing all project POs</span>}{selectedVendorId ? <button type="button" onClick={() => setSelectedVendorId(null)} className="font-bold text-accent hover:underline">Clear filter</button> : null}</div><table className="w-full text-left text-xs"><thead className="bg-panel2/60 text-[10px] uppercase tracking-wider text-muted"><tr><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("name")} className="font-bold hover:text-accent">PO / Vendor {spendingSort === "name" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("provision")} className="font-bold hover:text-accent">Issued Provision {spendingSort === "provision" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("actual")} className="font-bold hover:text-accent">GR55 Actual {spendingSort === "actual" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("remaining")} className="font-bold hover:text-accent">Balance {spendingSort === "remaining" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("utilization")} className="font-bold hover:text-accent">Utilization {spendingSort === "utilization" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th></tr></thead><tbody className="divide-y divide-line/35">{sortedVisiblePoRows.map((row) => <tr key={row.po} className="transition hover:bg-panel2/35"><td className="px-3 py-3"><div className="font-mono font-bold text-accent">{row.po}</div><div className="text-[10px] text-muted">{row.vendorName}{row.status ? ` · ${row.status}` : ""}</div></td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.provision)}</td><td className="px-3 py-3 text-right font-mono text-success">{formatCurrency(row.actual)}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.remaining)}</td><td className="px-3 py-3"><div className="flex min-w-[145px] items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-line/45"><div className={`h-full rounded-full ${row.utilization > 100 ? "bg-danger" : row.utilization >= 80 ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.min(100, Math.max(0, row.utilization))}%` }} /></div><span className="w-11 text-right font-mono font-bold">{row.utilization.toFixed(1)}%</span></div></td></tr>)}</tbody></table></div>}
+            </div>          </div>
         );
-
       case "costTrends.section.costByWbsMatrix":
         return (
           <div className="h-full relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
