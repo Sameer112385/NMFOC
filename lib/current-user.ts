@@ -103,7 +103,7 @@ export function canAccessSettings(role?: string | null): boolean {
 }
 
 export function canManageDashboardLayout(role?: string | null): boolean {
-  return role === 'Admin';
+  return role === 'Admin' || role === 'Cost Controller';
 }
 
 export function canSubmitPmUpdates(

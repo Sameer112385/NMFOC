@@ -2050,6 +2050,124 @@ export function TrendAnalysisPanel({
               {spendingTableTab === "vendor" ? <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-panel2/60 text-[10px] uppercase tracking-wider text-muted"><tr><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("name")} className="font-bold hover:text-accent">Vendor {spendingSort === "name" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("poCount")} className="font-bold hover:text-accent">PO Count {spendingSort === "poCount" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("provision")} className="font-bold hover:text-accent">Issued Provision {spendingSort === "provision" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("actual")} className="font-bold hover:text-accent">GR55 Actual {spendingSort === "actual" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("remaining")} className="font-bold hover:text-accent">Balance {spendingSort === "remaining" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("utilization")} className="font-bold hover:text-accent">Utilization {spendingSort === "utilization" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th></tr></thead><tbody className="divide-y divide-line/35">{sortedVendorRows.map((row) => <tr key={row.id} onClick={() => { setSelectedVendorId(row.id); setSpendingTableTab("po"); }} className="cursor-pointer transition hover:bg-accent/5"><td className="px-3 py-3"><div className="font-semibold text-text">{row.name}</div><div className="font-mono text-[10px] text-muted">{row.id}</div></td><td className="px-3 py-3 text-right font-mono">{row.poCount}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.provision)}</td><td className="px-3 py-3 text-right font-mono text-success">{formatCurrency(row.actual)}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.remaining)}</td><td className="px-3 py-3"><div className="flex min-w-[145px] items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-line/45"><div className={`h-full rounded-full ${row.utilization > 100 ? "bg-danger" : row.utilization >= 80 ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.min(100, Math.max(0, row.utilization))}%` }} /></div><span className="w-11 text-right font-mono font-bold">{row.utilization.toFixed(1)}%</span></div></td></tr>)}</tbody></table></div> : <div className="mt-4 overflow-x-auto"><div className="mb-3 flex items-center justify-between text-[11px] text-muted">{selectedVendorId ? <span>Showing POs for <strong className="text-text">{poSpending.vendorRows.find((vendor) => vendor.id === selectedVendorId)?.name ?? "selected vendor"}</strong></span> : <span>Showing all project POs</span>}{selectedVendorId ? <button type="button" onClick={() => setSelectedVendorId(null)} className="font-bold text-accent hover:underline">Clear filter</button> : null}</div><table className="w-full text-left text-xs"><thead className="bg-panel2/60 text-[10px] uppercase tracking-wider text-muted"><tr><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("name")} className="font-bold hover:text-accent">PO / Vendor {spendingSort === "name" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("provision")} className="font-bold hover:text-accent">Issued Provision {spendingSort === "provision" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("actual")} className="font-bold hover:text-accent">GR55 Actual {spendingSort === "actual" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5 text-right"><button type="button" onClick={() => toggleSpendingSort("remaining")} className="font-bold hover:text-accent">Balance {spendingSort === "remaining" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th><th className="px-3 py-2.5"><button type="button" onClick={() => toggleSpendingSort("utilization")} className="font-bold hover:text-accent">Utilization {spendingSort === "utilization" ? (spendingSortDirection === "asc" ? "↑" : "↓") : "↕"}</button></th></tr></thead><tbody className="divide-y divide-line/35">{sortedVisiblePoRows.map((row) => <tr key={row.po} className="transition hover:bg-panel2/35"><td className="px-3 py-3"><div className="font-mono font-bold text-accent">{row.po}</div><div className="text-[10px] text-muted">{row.vendorName}{row.status ? ` · ${row.status}` : ""}</div></td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.provision)}</td><td className="px-3 py-3 text-right font-mono text-success">{formatCurrency(row.actual)}</td><td className="px-3 py-3 text-right font-mono">{formatCurrency(row.remaining)}</td><td className="px-3 py-3"><div className="flex min-w-[145px] items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-line/45"><div className={`h-full rounded-full ${row.utilization > 100 ? "bg-danger" : row.utilization >= 80 ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.min(100, Math.max(0, row.utilization))}%` }} /></div><span className="w-11 text-right font-mono font-bold">{row.utilization.toFixed(1)}%</span></div></td></tr>)}</tbody></table></div>}
             </div>          </div>
         );
+      case "trends.section.revenueByWbsMatrix":
+        return (
+          <div className="h-full relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-line/30 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-text">Revenue by WBS &amp; Period</h3>
+                <p className="mt-1 text-xs text-muted/70">{wbsRevenueMatrix.rows.length} WBS element{wbsRevenueMatrix.rows.length === 1 ? "" : "s"} across {wbsRevenueMatrix.periods.length} period{wbsRevenueMatrix.periods.length === 1 ? "" : "s"}. Column totals match the trend charts above.</p>
+              </div>
+              <div className="no-print flex items-center gap-4">
+                <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-muted">
+                  <input type="checkbox" checked={hideZeroMatrixRows} onChange={(event) => setHideZeroMatrixRows(event.target.checked)} className="h-3.5 w-3.5 rounded border-line accent-accent" />
+                  Hide empty rows
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-muted">Sort rows by</span>
+                  <div className="flex gap-1 rounded-xl border border-line bg-panel2 p-1">
+                    {(["code", "total"] as const).map((mode) => (
+                      <button key={mode} type="button" title={mode === "code" ? "Order rows by WBS code (ascending)" : "Order rows by total revenue (largest first)"} onClick={() => setMatrixSort(mode)}
+                        className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${matrixSort === mode ? "bg-accent text-white shadow-sm" : "text-muted hover:text-text"}`}>
+                        {mode === "code" ? "WBS Code" : "Total ▾"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {(selectedMatrixWbs.length > 0 || wbsRevenueMatrix.hasRowFilter) && (
+              <div className="no-print mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-muted">Active filters:</span>
+                {selectedMatrixWbs.length > 0 && (
+                  <button type="button" onClick={() => setSelectedMatrixWbs([])} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
+                    {selectedMatrixWbs.length} WBS selected <X className="h-3 w-3" />
+                  </button>
+                )}
+                {Object.values(columnFilters).some(isColumnFilterActive) && (
+                  <button type="button" onClick={() => setColumnFilters({})} className="inline-flex items-center gap-1.5 rounded-lg border border-accent/50 bg-accent/10 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-accent/20">
+                    Clear column filters <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-line/40 bg-panel2/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              {enginePocPeriod && wbsRevenueMatrix.periods.includes(enginePocPeriod) ? (
+                <span>Every column shows <strong className="text-text">actual revenue posted</strong> in that period, except <strong className="text-accent">{enginePocPeriod}&deg;</strong>, which is a <strong className="text-text">percentage-of-completion accrual</strong> (planned revenue × cost-based POC, less what that WBS already billed). The two are different measures — a row does not read left-to-right as one series. The <strong className="text-accent">{enginePocPeriod}&deg;</strong> column total is what ties to the In Month Rev card above; the grand total does not.</span>
+              ) : (
+                <span>Every column shows <strong className="text-text">actual revenue posted</strong> in that period. The percentage-of-completion accrual period{enginePocPeriod ? ` (${enginePocPeriod})` : ""} falls outside the selected range.</span>
+              )}
+            </div>
+            {wbsRevenueMatrix.hasRowFilter && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-accent/40 bg-accent/5 px-3 py-2 text-[11px] leading-relaxed text-accent">
+                <Filter className="mt-0.5 h-3.5 w-3.5 shrink-0" fill="currentColor" />
+                <span>A row filter is active, so some WBS rows are hidden. The totals below are <strong>subtotals of the visible rows</strong> and no longer tie to the In Month Rev card. Clear the active filters to restore the full total.</span>
+              </div>
+            )}
+            {wbsRevenueMatrix.rows.length > 0 && wbsRevenueMatrix.periods.length > 0 ? (
+              <div className="mt-4 overflow-x-auto overflow-y-auto max-h-[580px]">
+                <table style={{ minWidth: 280 + wbsRevenueMatrix.periods.length * 120 + 150 }} className="w-full text-xs border-separate border-spacing-0">
+                  <thead className="text-left text-muted/80">
+                    <tr>
+                      <th className="sticky top-0 left-0 z-30 w-[280px] min-w-[280px] border-b border-line/45 bg-panel2 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] shadow-[1px_0_0_0_rgb(var(--color-line))]">
+                        <span className="inline-flex items-center">WBS<WbsColumnFilter options={matrixWbsOptions} selected={selectedMatrixWbs} onChange={setSelectedMatrixWbs} /></span>
+                      </th>
+                      {wbsRevenueMatrix.periods.map((period) => {
+                        const isPoc = period === enginePocPeriod;
+                        return (
+                          <th key={period} title={isPoc ? "Percentage-of-completion accrual — planned revenue × cost-based POC. All other columns are posted actuals." : "Actual revenue posted in this period."}
+                            className={`sticky top-0 z-20 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] whitespace-nowrap ${isPoc ? "border-b-2 border-accent text-accent" : "border-b border-line/45"}`}>
+                            <span className="inline-flex items-center justify-end">{period}{isPoc ? "°" : ""}<ColumnFilterButton period={period} value={columnFilters[period] ?? DEFAULT_COLUMN_FILTER} onChange={(next) => setColumnFilters((prev) => ({ ...prev, [period]: next }))} /></span>
+                          </th>
+                        );
+                      })}
+                      <th className="sticky top-0 z-20 border-b border-line/45 bg-panel2 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em]">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-text font-medium">
+                    {wbsRevenueMatrix.rows.map((row) => (
+                      <tr key={row.norm} className="group">
+                        <td className="sticky left-0 z-10 w-[280px] min-w-[280px] border-b border-line/30 bg-panel px-4 py-3 shadow-[1px_0_0_0_rgb(var(--color-line))] transition group-hover:bg-panel2">
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => { setDrilldownWbs(row.norm); setSelectedPeriod(null); setDrilldownTab("sap"); setDrilldownSearch(""); setDrilldownPage(1); }}
+                              title="Show this WBS's actual cost postings"
+                              className={`font-mono whitespace-nowrap underline-offset-2 hover:underline ${drilldownWbs === row.norm ? "text-accent font-bold" : "text-accent"}`}>
+                              {row.code}
+                            </button>
+                            {row.isUnmapped && (<span title="Posted revenue on a WBS that is not present in the WBS master" className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-danger">Unmapped</span>)}
+                          </div>
+                          {row.desc && (<div className="mt-0.5 max-w-[280px] truncate text-[11px] text-muted/70" title={row.desc}>{row.desc}</div>)}
+                        </td>
+                        {row.cells.map((value, index) => (
+                          <td key={wbsRevenueMatrix.periods[index]} className={`border-b border-line/30 px-4 py-3 text-right font-mono whitespace-nowrap transition group-hover:bg-panel2/40 ${wbsRevenueMatrix.periods[index] === enginePocPeriod ? "bg-accent/5" : ""} ${value === 0 ? "text-muted/40" : value < 0 ? "text-danger" : "text-success"}`}>
+                            {value === 0 ? "—" : formatCurrency(value)}
+                          </td>
+                        ))}
+                        <td className={`border-b border-line/30 px-4 py-3 text-right font-mono font-bold whitespace-nowrap transition group-hover:bg-panel2/40 ${row.total < 0 ? "text-danger" : "text-text"}`}>{formatCurrency(row.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="font-bold text-text">
+                    <tr>
+                      <td className="sticky bottom-0 left-0 z-30 w-[280px] min-w-[280px] bg-panel2 border-t-2 border-line/65 px-4 py-3 text-[11px] uppercase tracking-wider shadow-[1px_0_0_0_rgb(var(--color-line))]">Total &middot; {wbsRevenueMatrix.rows.length} WBS</td>
+                      {wbsRevenueMatrix.columnTotals.map((total, index) => (
+                        <td key={wbsRevenueMatrix.periods[index]} className={`sticky bottom-0 z-20 bg-panel2 border-t-2 px-4 py-3 text-right font-mono whitespace-nowrap ${wbsRevenueMatrix.periods[index] === enginePocPeriod ? "text-accent border-accent" : "border-line/65"} ${total < 0 ? "text-danger" : ""}`}>{formatCurrency(total)}</td>
+                      ))}
+                      <td className="sticky bottom-0 z-20 bg-panel2 border-t-2 border-line/65 px-4 py-3 text-right font-mono whitespace-nowrap">{formatCurrency(wbsRevenueMatrix.grandTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-sm text-muted">
+                <div className="font-semibold text-text">No revenue to break down</div>
+                <div className="mt-1 text-xs">No revenue-generating WBS produced revenue in the selected range.</div>
+              </div>
+            )}
+          </div>
+        );
+
       case "costTrends.section.costByWbsMatrix":
         return (
           <div className="h-full relative z-0 rounded-3xl border border-line/70 bg-panel/75 p-5 shadow-card print-card">

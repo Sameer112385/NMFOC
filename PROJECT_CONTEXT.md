@@ -141,3 +141,28 @@ Two consequences worth internalising:
 * Revenue contribution is presented as a sortable WBS list: Name, formatted Revenue (M/K), and POC %. Fill colour is based on POC (red/amber/green); sorting supports Revenue or POC, ascending or descending.
 * CN41 planned-cost source rule: filter `ObjectType` to `WBS element`; use `Projektelm` as WBS code, `Project Object` as description, and `OCostPlan0` or `PrCstSc000` as planned cost. Historical revenue uploads do not replace CN41 and cannot supply planned cost.
 * Trend cumulative revenue must never fall in the current period because current POC is below historical posting. Per WBS, retain `max(prior posted cumulative revenue, POC revenue)` for the current cumulative point.
+
+---
+
+## 9. Project Update: 2026-08-03 to 2026-08-10
+
+### New financial-data capabilities
+* ME2J upload is available in **Upload Financial Sources** and stores per-project PO commitment rows. Use it for the PO issued/provision value and WBS allocation. Ignore deletion indicator `L`; retain `S` rows as Locked.
+* GR55 is the authoritative source for PO actual consumption. Do not calculate actual cost from ME2J. PO utilization = GR55 actual cost / ME2J issued provision; remaining balance = issued provision - GR55 actual.
+* A confidential Vendor Master upload is available in **Settings** for Admins. It maps Vendor ID to Vendor/Supplier/Subcontractor name. The master is server-side, Admin-gated, and should never be exposed to normal dashboard viewers.
+
+### PO and Vendor Spending dashboard
+* Cost Trends includes **PO & Vendor Spending** with issued provision, GR55 actual, remaining balance, utilization progress bars, PO count, vendor count, and Excel export.
+* Users can switch between **By Vendor** and **By PO**, sort each table by its column headings, and click a vendor to filter the PO table to that vendor.
+* The PO/Vendor section replaced the obsolete subcontractor-only visualization; it does not remove Cost by WBS & Period or any Revenue Trends content.
+
+### Revenue, cost, and layout safeguards
+* Revenue Trends must retain **Revenue by WBS & Period**. It was restored with its existing filters, totals, sort controls, WBS drill-down, and Excel export.
+* Cost Trends retains its independent **Cost by WBS & Period** table. Treat Revenue and Cost matrices as separate, required dashboard widgets.
+* The duplicate Forecast Cost visual was renamed **Cost vs Budget Trend** and now shows only Actual Cost and Planned Cost/Budget. A genuine Estimate at Completion is pending the Forecasting module.
+* Chart data labels use M/K compact currency formatting and charts default their horizontal position to the latest year. Preserve final-point visibility.
+* Dashboard hide/show and drag layout controls are reversible and available to Admin and Cost Controller. Settings remains Admin-only.
+
+### Pending forecasting/AI work
+* Forecasting is approved only as a design proposal so far. Build deterministic EAC and completion-date logic first, with physical progress history and planned dates as required inputs.
+* AI will provide explanations, risks, and recommendations from calculated facts. No AI provider is integrated yet. The user has a Modal DeepSeek-V4-Flash endpoint; integrate only after it is Ready and its secure API contract is confirmed.
