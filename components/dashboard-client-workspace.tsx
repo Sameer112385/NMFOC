@@ -17,6 +17,7 @@ import {
 import { getEffectivePendingCost } from "@/lib/pm-posting";
 import { Briefcase, Coins, Percent, TrendingUp, Activity, ShieldAlert, DollarSign, Filter, LayoutGrid, Loader2, X } from "lucide-react";
 import { TrendAnalysisPanel } from "@/components/trend-analysis-panel";
+import { ProjectForecastPanel } from "@/components/project-forecast-panel";
 import { DashboardCustomizePanel } from "@/components/dashboard-customize-panel";
 import { DashboardGrid, type GridItem } from "@/components/dashboard-grid";
 import { isWidgetHidden, getWidget, type DashboardLayout } from "@/lib/dashboard-widgets";
@@ -139,14 +140,14 @@ export function DashboardClientWorkspace({
   trendsOrder = [],
   costTrendsOrder = [],
 }: DashboardClientWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<"summary" | "trends" | "costTrends">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "trends" | "costTrends" | "forecast">("summary");
   const [customizing, setCustomizing] = useState(false);
   // Layout edit mode (drag to reorder). editRows is the row-based order.
   const [editingLayout, setEditingLayout] = useState(false);
   const [editRows, setEditRows] = useState<string[][]>([]);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutMsg, setLayoutMsg] = useState("");
-  // Trends & Cost Trends tab edit mode â€” states live here so the tab-bar buttons can trigger them.
+  // Trends & Cost Trends tab edit mode Ã¢â‚¬â€ states live here so the tab-bar buttons can trigger them.
   const [editingTrends, setEditingTrends] = useState(false);
   const [editingCostTrends, setEditingCostTrends] = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
@@ -229,23 +230,14 @@ export function DashboardClientWorkspace({
   const sapActualCost = filteredCostRows.reduce((sum, row) => sum + (row.sap_actual_cost ?? 0), 0);
   const pmSimulatedCost = filteredCostRows.reduce((sum, row) => sum + (row.pm_pending_cost ?? 0), 0);
   const plannedRevenue = filteredRevenueRows.reduce((sum, row) => sum + row.planned_revenue, 0);
-  const recognizedRevenue = filteredRevenueRows.reduce((sum, row) => sum + row.recognized_revenue_to_date, 0);
-  const sapRecognizedRevenue = filteredRevenueRows.reduce((sum, row) => sum + (row.sap_earned_revenue ?? 0), 0);
-  const remainingRevenue = plannedRevenue - recognizedRevenue;
   const remainingCost = plannedCost - actualCost;
   const forecastCost = filteredCostRows.reduce((sum, row) => sum + row.forecast_cost, 0) || actualCost;
   const forecastMargin = plannedRevenue - forecastCost;
   const forecastMarginPercent = plannedRevenue > 0 ? (forecastMargin / plannedRevenue) * 100 : 0;
-  const pocPercent = clampPercent(plannedRevenue > 0 ? (recognizedRevenue / plannedRevenue) * 100 : 0);
-  const sapPocPercent = clampPercent(plannedRevenue > 0 ? (sapRecognizedRevenue / plannedRevenue) * 100 : 0);
   const sapMargin = plannedRevenue - sapActualCost;
   const managementMargin = plannedRevenue - actualCost;
   const mtdActual = filteredCostRows.reduce((sum, row) => sum + row.mtd_actual_cost, 0);
   const ytdActual = filteredCostRows.reduce((sum, row) => sum + row.ytd_actual_cost, 0);
-  const mtdRevenue = filteredRevenueRows.reduce((sum, row) => sum + row.mtd_revenue_recognition, 0);
-  const ytdRevenue = filteredRevenueRows.reduce((sum, row) => sum + row.ytd_revenue_recognition, 0);
-  const currentMonthRevenue = mtdRevenue;
-  const openingRecognizedRevenue = filteredRevenueRows.reduce((sum, row) => sum + (row.opening_recognized_revenue ?? 0), 0);
   const latestPmUpdate = updates[0] ?? null;
 
   const trendData = useMemo(() => {
@@ -262,6 +254,21 @@ export function DashboardClientWorkspace({
       selectedPos,
     });
   }, [project.id, allWbsRows, gr55Rows, historicalRevenueRows, updates, projectWbsMaster, costElementControl, selectedWbs, selectedPos]);
+
+  // The trend engine is the single revenue-recognition ledger. It combines
+  // historical uploads, GR55 postings and the current-period POC accrual, and
+  // is shared by the revenue cards, charts, matrix and Forecast & Completion.
+  const latestRevenuePoint = trendData.at(-1);
+  const recognizedRevenue = latestRevenuePoint?.cumulativeRecognizedRevenue ?? 0;
+  const mtdRevenue = latestRevenuePoint?.recognizedRevenue ?? 0;
+  const currentMonthRevenue = mtdRevenue;
+  const openingRecognizedRevenue = Math.max(0, recognizedRevenue - mtdRevenue);
+  const currentRevenueYear = latestRevenuePoint?.period.slice(0, 4) ?? new Date().getFullYear().toString();
+  const ytdRevenue = trendData.filter((point) => point.period.startsWith(currentRevenueYear)).reduce((sum, point) => sum + point.recognizedRevenue, 0);
+  const sapRecognizedRevenue = openingRecognizedRevenue;
+  const remainingRevenue = plannedRevenue - recognizedRevenue;
+  const pocPercent = clampPercent(plannedRevenue > 0 ? (recognizedRevenue / plannedRevenue) * 100 : 0);
+  const sapPocPercent = clampPercent(plannedRevenue > 0 ? (sapRecognizedRevenue / plannedRevenue) * 100 : 0);
 
   const risks = buildRiskAlerts(filteredRevenueRows);
   const riskChartData = Array.from(
@@ -561,9 +568,17 @@ export function DashboardClientWorkspace({
               )}
             >
               Cost Trends
+            </button>            <button
+              onClick={() => setActiveTab("forecast")}
+              className={cn(
+                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                activeTab === "forecast" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
+              )}
+            >
+              Forecast &amp; Completion
             </button>
           </div>
-          {canCustomize && !editingLayout && !editingTrends && !editingCostTrends ? (
+          {canCustomize && activeTab !== "forecast" && !editingLayout && !editingTrends && !editingCostTrends ? (
             <div className="flex items-center gap-1">
               <button
                 onClick={startEditLayout}
@@ -621,7 +636,7 @@ export function DashboardClientWorkspace({
             <div className="no-print sticky top-[calc(114px+var(--project-identity-height,0px))] z-20 flex flex-col gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-4 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-accent">
                 <LayoutGrid className="h-4 w-4 shrink-0" />
-                <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> Â· {layoutMsg}</span> : null}</span>
+                <span>Drag the handle on any visual to rearrange it, then save.{layoutMsg ? <span className="text-danger"> Ã‚Â· {layoutMsg}</span> : null}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -659,6 +674,17 @@ export function DashboardClientWorkspace({
             onReorder={applySummaryReorder}
           />
         </div>
+      ) : activeTab === "forecast" ? (
+        <ProjectForecastPanel
+          costRows={filteredCostRows}
+          revenueRows={filteredRevenueRows}
+          gr55Rows={gr55Rows}
+          historicalRevenueRows={historicalRevenueRows}
+          poCommitments={poCommitments}
+          costElementControl={costElementControl}
+          revenueTrend={trendData.map((point) => ({ period: point.period, recognizedRevenue: point.recognizedRevenue }))}
+          recognizedRevenueToDate={recognizedRevenue}
+        />
       ) : activeTab === "trends" ? (
         <TrendAnalysisPanel
           mode="revenue"

@@ -1198,12 +1198,15 @@ export function TrendAnalysisPanel({
     });
   }, [costRows, selectedWbs, selectedPos, gr55Rows]);
 
-  // KPI Calculations in the active range from the single source (revenue_wbs rows)
+  // Revenue KPIs use the same trend ledger as Revenue by WBS & Period.
+  // Do not sum the persisted revenue_wbs totals here: those are a separate
+  // calculation snapshot and can otherwise diverge from posted revenue + POC.
   const kpis = useMemo(() => {
     const plannedCost = filteredWbsRows.reduce((sum, r) => sum + (r.planned_cost ?? 0), 0);
     const totalActualCost = filteredWbsRows.reduce((sum, r) => sum + (r.actual_cost_to_date ?? 0), 0);
     const plannedRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.planned_revenue ?? 0), 0);
-    const totalRecognizedRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.recognized_revenue_to_date ?? 0), 0);
+    const latestTrendPoint = trendData.at(-1);
+    const totalRecognizedRevenue = latestTrendPoint?.cumulativeRecognizedRevenue ?? 0;
     const pocPercent = plannedRevenue > 0 ? Math.min(100, (totalRecognizedRevenue / plannedRevenue) * 100) : 0;
 
     let costGrowth = 0;
@@ -1225,10 +1228,10 @@ export function TrendAnalysisPanel({
       }
 
       inMonthCost = activePoint.forecastCost;
-      inMonthRevenue = activePoint.forecastRevenue;
+      inMonthRevenue = activePoint.recognizedRevenue;
       activePeriodLabel = activePoint.period;
     } else {
-      // Fallback in-month to MTD values from the single source
+      // Fallback only when no trend data exists.
       inMonthCost = filteredWbsRows.reduce((sum, r) => sum + (r.mtd_actual_cost ?? 0), 0);
       inMonthRevenue = filteredWbsRows.reduce((sum, r) => sum + (r.mtd_revenue_recognition ?? 0), 0);
       activePeriodLabel = "Latest";

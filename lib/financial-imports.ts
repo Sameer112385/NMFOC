@@ -13,13 +13,22 @@ export async function parseGr55File(file: File): Promise<ParsedFinancialUpload<G
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
 
+  const parseSapAmount = (value: unknown): number => {
+    if (value === null || value === undefined || String(value).trim() === "") return 0;
+    const raw = String(value).trim();
+    const isParenthesizedNegative = /^\(.*\)$/.test(raw);
+    const numeric = safeNumber(isParenthesizedNegative ? raw.slice(1, -1) : raw);
+    return isParenthesizedNegative ? -numeric : numeric;
+  };
+
   const rows = rawRows
     .map((rawRow) => {
       const row = normalizeRow(rawRow);
       const businessTransaction = String(row.business_transaction ?? '').trim();
       const wbs_code = String(row.wbs_element ?? '').trim();
       const posting_date = toIsoDate(String(row.posting_date ?? '').trim());
-      const amount = safeNumber(row.val_coarea_crcy ?? 0);
+      // SAP exports negative values using parentheses, e.g. (825,178.59).
+      const amount = parseSapAmount(row.val_coarea_crcy ?? 0);
       const costElement = String(row.cost_element ?? '').trim();
       
       // Irrespective of cost element name, if business transaction is COIE, it is Material

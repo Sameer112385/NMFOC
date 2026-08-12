@@ -166,3 +166,52 @@ Two consequences worth internalising:
 ### Pending forecasting/AI work
 * Forecasting is approved only as a design proposal so far. Build deterministic EAC and completion-date logic first, with physical progress history and planned dates as required inputs.
 * AI will provide explanations, risks, and recommendations from calculated facts. No AI provider is integrated yet. The user has a Modal DeepSeek-V4-Flash endpoint; integrate only after it is Ready and its secure API contract is confirmed.
+---
+
+## 11. Forecast & Revenue Integrity Update (2026-08-12)
+
+### Forecast & Completion tab
+* Added a project-dashboard **Forecast & Completion** tab (`components/project-forecast-panel.tsx`, `lib/project-forecast.ts`). It is a transparent deterministic model, not an AI-generated financial forecast.
+* GR55-derived forecast figures use the project’s **Cost Element Control** records. If controls exist, only elements marked `include_in_cost = true` are included; revenue GLs `400110`, `400119`, `400210`, and `400310` are always excluded from project cost.
+* This filter applies to forecast actual cost, cost outlook, monthly burn rate, cost drivers, and GR55 actual used in PO exposure. The screen shows the number of selected cost elements applied.
+* Cost EAC = controlled actual cost + max(remaining planned-cost budget, outstanding ME2J commitments). ME2J is still provision/commitment data; it has no GL cost element mapping.
+* Expected monthly cost uses the average of the latest three active GR55 months. Forecast months are `remaining expected cost / average monthly burn`, rounded up. Do not cap the forecast at 12 months: an earlier cap forced the residual into the final month and created a false spike. Green expected-cost bars are clickable and explain their calculation.
+* Revenue outlook uses only existing project figures: planned revenue, recognized revenue to date, and current-month revenue recognition. It is a **run-rate scenario**, not AI: remaining revenue is spread at the current-month recognition rate. If the rate is zero, show totals but no timeline.
+* Completion/schedule forecasting remains unavailable until planned start/finish dates and dated physical progress are supplied. Never use cost POC as physical completion progress.
+
+### Revenue trend semantics and GR55 parser
+* Revenue GLs are `400110`, `400119`, `400210`, and `400310`. Pre-2026 comes from Historical Revenue; 2026 onward comes from GR55. GR55 revenue is sign-reversed for dashboard display because SAP revenue credits are negative.
+* Use **Posting Date** for both cost and revenue period allocation. Document Date is not the reporting period. A document dated August with a 31-Jul Posting Date belongs to July.
+* Revenue Trends intentionally combines: historical columns = SAP-posted revenue/adjustments; latest data period = management POC accrual. The current POC amount can change after included GR55 cost, PM pending cost, planned-cost, WBS-master, or Cost Element Control changes. It is not necessarily SAP billing.
+* Fixed `parseGr55File()` to handle SAP parenthesized values: `(825,178.59)` is parsed as `-825,178.59`. This is essential for GR55 cost and revenue accuracy. Files imported before this correction must be uploaded again to rebuild raw rows, summaries, `revenue_wbs`, trends, and forecasts.
+* SEC NG NMFOC July 2026 exposed this issue: parenthesized `400119` revenue values were previously stored as zero, leaving only a small `SAR (1,532.46)` adjustment. After re-upload with the corrected parser, the July total is correct.
+
+---
+
+## 12. Revenue Ledger and Forecast Update (2026-08-12)
+
+### Authoritative revenue recognition ledger
+
+* **`lib/trends.ts` / `buildTrendData()` is the sole authoritative revenue-recognition ledger for dashboard display.** It combines:
+  1. Historical Revenue uploads for periods before `2026-01`;
+  2. GR55 revenue postings for `2026-01` onward, using **Posting Date** and sign-reversing SAP credit values;
+  3. a current/latest data-period POC accrual by revenue-generating WBS.
+* For the current data period, each WBS accrual is `max(prior posted revenue for that WBS, cost-based POC revenue) - prior posted revenue`. Therefore prior posted revenue is never duplicated and current cumulative revenue cannot fall below previous postings.
+* Revenue Trends KPI cards, Revenue by WBS & Period, summary revenue cards/POC/revenue split, and Forecast & Completion must all consume this ledger. Do **not** sum persisted `revenue_wbs.recognized_revenue_to_date`, `mtd_revenue_recognition`, or `sap_earned_revenue` for dashboard totals; they are recalculation snapshots and may have per-WBS reporting periods.
+* For SEC NG NMFOC after the 2026-08 source set, the ledger reconciles to **SAR 14,928,759.70** cumulative recognized revenue and **SAR 223,876.57** for August 2026. These figures replace the stale stored-card total of SAR 14,906,683.85.
+* Revenue by WBS & Period column totals must equal `TrendDataPoint.recognizedRevenue`; its grand total equals the latest `cumulativeRecognizedRevenue` only when the full period range is shown. A row does not represent a simple continuous posting series because the current/latest column is a POC accrual.
+
+### POC formula
+
+* Per revenue-generating WBS, calculate cost POC from only active/include-in-cost WBS and cost elements selected in the project Cost Element Control:
+  `POC % = min(100%, (eligible GR55 actual + effective PM pending cost) / planned cost × 100)`.
+* `POC revenue = WBS planned revenue × POC %`.
+* Project POC shown in dashboard is `ledger cumulative recognized revenue / planned revenue`; it is not a separate stored percentage.
+
+### Forecast & Completion controls
+
+* `components/project-forecast-panel.tsx` and `lib/project-forecast.ts` implement deterministic, user-selectable forecasting. This is not an AI feature.
+* Actual-performance bases: Last 1 Month, Last 2 Months Average, Last 3 Months Average, Current Year Average, and Recommended/Smart Forecast.
+* Target-based bases: Target Completion Date (reverse-calculates required monthly revenue across the partial current month plus future months) and Monthly Revenue Target. Current-month recognized revenue is never reduced by a target.
+* The selected basis controls both revenue run rate and the eligible cost-to-revenue ratio; revenue forecasts are capped at remaining project revenue. Target modes show run-rate gap, improvement %, status, required cost and expected final GM %.
+* Forecast remaining revenue must receive the **ledger cumulative recognized revenue** from `DashboardClientWorkspace`, not a rebuilt historical total or stored `revenue_wbs` aggregate.
