@@ -60,9 +60,9 @@ export function DashboardGrid({
     return (
       <div className="space-y-4">
         {rows.map((row, ri) => (
-          <div key={ri} className="flex items-stretch gap-4">
+          <div key={ri} className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
             {row.map((it) => (
-              <div key={it.id} className="min-w-0 flex flex-1 flex-col">
+              <div key={it.id} className="min-w-0 flex w-full flex-1 flex-col sm:min-w-[220px]">
                 {it.node}
               </div>
             ))}
@@ -187,7 +187,7 @@ function DroppableRow({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex items-stretch gap-4 rounded-xl p-1 transition-colors",
+        "flex flex-col gap-4 rounded-xl p-1 transition-colors sm:flex-row sm:flex-wrap",
         isOver && "bg-accent/5 outline-dashed outline-1 outline-accent/30",
       )}
     >
@@ -216,7 +216,7 @@ function SortableCell({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("relative min-w-0 flex flex-1 flex-col", (isDragging || dimmed) && "opacity-40")}
+      className={cn("relative min-w-0 flex w-full flex-1 flex-col sm:min-w-[220px]", (isDragging || dimmed) && "opacity-40")}
     >
       <button
         type="button"

@@ -24,6 +24,18 @@ type ForecastTimelinePoint = {
   isFinalPeriod: boolean;
 };
 
+export type CumulativeForecastPoint = {
+  period: string;
+  actualRevenue: number | null;
+  forecastRevenue: number | null;
+  plannedRevenue: number;
+  actualCost: number | null;
+  forecastCost: number | null;
+  plannedCost: number;
+  isCurrentMonth: boolean;
+  isFinalPeriod: boolean;
+};
+
 type ForecastMethodComparison = {
   basis: RevenueForecastBasis;
   label: string;
@@ -55,6 +67,7 @@ export type ProjectForecast = {
   completedPeriods: string[];
   completionPeriod: string | null;
   timeline: ForecastTimelinePoint[];
+  cumulativeTimeline: CumulativeForecastPoint[];
   selectedBasis: RevenueForecastBasis;
   recommendedBasis: RevenueForecastBasis;
   recommendationReason: string;
@@ -267,6 +280,53 @@ export function buildProjectForecast({
   const futureCostForecast = timeline.filter((point) => !point.isCurrentMonth).reduce((sum, point) => sum + (point.costForecast ?? 0), 0);
   const eac = priorActualCost + currentCostForecast + futureCostForecast;
   const plannedCost = costRows.reduce((sum, row) => sum + Number(row.planned_cost ?? 0), 0);
+
+  // One shared cumulative dataset powers both forecast charts. The forecast
+  // series starts from the latest actual balance, then adds the selected run
+  // rate and its selected-period cost-to-revenue ratio month by month.
+  const actualRevenueByPeriod = new Map<string, number>(revenueTrend?.map((point) => [point.period, Number(point.recognizedRevenue ?? 0)]) ?? revenueByMonth.entries());
+  actualRevenueByPeriod.set(currentPeriod, currentRevenueActual);
+  const actualPeriods = Array.from(new Set([...costByMonth.keys(), ...actualRevenueByPeriod.keys()]))
+    .filter((period) => period <= currentPeriod)
+    .sort();
+  let cumulativeActualRevenue = 0;
+  let cumulativeActualCost = 0;
+  const cumulativeTimeline: CumulativeForecastPoint[] = actualPeriods.map((period) => {
+    cumulativeActualRevenue += actualRevenueByPeriod.get(period) ?? 0;
+    cumulativeActualCost += costByMonth.get(period) ?? 0;
+    const isCurrentMonth = period === currentPeriod;
+    return {
+      period,
+      actualRevenue: cumulativeActualRevenue,
+      // At the handover point both lines use the same actual balance.
+      forecastRevenue: isCurrentMonth ? cumulativeActualRevenue : null,
+      plannedRevenue,
+      actualCost: cumulativeActualCost,
+      forecastCost: isCurrentMonth ? cumulativeActualCost : null,
+      plannedCost,
+      isCurrentMonth,
+      isFinalPeriod: false,
+    };
+  });
+  let cumulativeForecastRevenue = cumulativeActualRevenue;
+  let cumulativeForecastCost = cumulativeActualCost;
+  const additionalCurrentRevenue = Math.max(0, currentRevenueForecast - currentRevenueActual);
+  const additionalCurrentCost = Math.max(0, currentCostForecast - currentCostActual);
+  timeline.filter((point) => !point.isCurrentMonth).forEach((point, index) => {
+    cumulativeForecastRevenue += (index === 0 ? additionalCurrentRevenue : 0) + (point.revenueForecast ?? 0);
+    cumulativeForecastCost += (index === 0 ? additionalCurrentCost : 0) + (point.costForecast ?? 0);
+    cumulativeTimeline.push({
+      period: point.period,
+      actualRevenue: null,
+      forecastRevenue: cumulativeForecastRevenue,
+      plannedRevenue,
+      actualCost: null,
+      forecastCost: cumulativeForecastCost,
+      plannedCost,
+      isCurrentMonth: false,
+      isFinalPeriod: point.isFinalPeriod,
+    });
+  });
   const positiveRates = methodComparison.filter((method) => method.available && method.monthlyRunRate > 0).map((method) => method.monthlyRunRate);
   const conservativeRate = positiveRates.length ? Math.min(...positiveRates) : selectedRunRate;
   const optimisticRate = positiveRates.length ? Math.max(...positiveRates) : selectedRunRate;
@@ -316,7 +376,7 @@ export function buildProjectForecast({
   return {
     plannedCost, actualCost, remainingBudget: Math.max(0, plannedCost - actualCost), outstandingCommitments, eac,
     expectedOverrun: Math.max(0, eac - plannedCost), expectedFinalGM: plannedRevenue - eac, expectedGMPercent: plannedRevenue > 0 ? (plannedRevenue - eac) / plannedRevenue * 100 : null, budgetUtilization: plannedCost > 0 ? actualCost / plannedCost * 100 : 0,
-    includedCostElementCount: includedCostElements.size, currentPeriod, completedPeriods: selectedPeriods, completionPeriod, timeline,
+    includedCostElementCount: includedCostElements.size, currentPeriod, completedPeriods: selectedPeriods, completionPeriod, timeline, cumulativeTimeline,
     selectedBasis, recommendedBasis, recommendationReason, revenueTrend: revenueTrendDirection, revenueStability, forecastConfidence, methodComparison, scenarios,
     targetDate: targetCompletionDate ?? null, monthlyRevenueTarget: selectedBasis === "monthlyTarget" ? enteredMonthlyTarget : null, targetStatus, targetStatusTone, runRateGap, runRateGapPercent,
     revenue: { planned: plannedRevenue, actualToDate: authoritativeRecognizedRevenue, remaining: remainingRevenue, selectedRunRate, currentActual: currentRevenueActual, currentForecast: currentRevenueForecast, futureMonthlyForecast: selectedRunRate },

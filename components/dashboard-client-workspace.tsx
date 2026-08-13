@@ -540,12 +540,12 @@ export function DashboardClientWorkspace({
     <div className="space-y-3">
       {/* Sticky Tab Selector (Hidden on Print) */}
       <div className="no-print sticky top-[calc(56px+var(--project-identity-height,0px))] z-10 rounded-xl border border-line/60 bg-panel p-1.5 shadow-sm">
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex gap-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid grid-cols-2 gap-1 sm:flex">
             <button
               onClick={() => setActiveTab("summary")}
               className={cn(
-                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                "min-h-11 rounded-lg px-3 py-2 text-xs font-bold leading-tight transition-all duration-100 sm:min-h-0 sm:px-4",
                 activeTab === "summary" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
               )}
             >
@@ -554,7 +554,7 @@ export function DashboardClientWorkspace({
             <button
               onClick={() => setActiveTab("trends")}
               className={cn(
-                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                "min-h-11 rounded-lg px-3 py-2 text-xs font-bold leading-tight transition-all duration-100 sm:min-h-0 sm:px-4",
                 activeTab === "trends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
               )}
             >
@@ -563,7 +563,7 @@ export function DashboardClientWorkspace({
             <button
               onClick={() => setActiveTab("costTrends")}
               className={cn(
-                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                "min-h-11 rounded-lg px-3 py-2 text-xs font-bold leading-tight transition-all duration-100 sm:min-h-0 sm:px-4",
                 activeTab === "costTrends" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
               )}
             >
@@ -571,7 +571,7 @@ export function DashboardClientWorkspace({
             </button>            <button
               onClick={() => setActiveTab("forecast")}
               className={cn(
-                "rounded-lg px-4 py-2 text-xs font-bold transition-all duration-100",
+                "min-h-11 rounded-lg px-3 py-2 text-xs font-bold leading-tight transition-all duration-100 sm:min-h-0 sm:px-4",
                 activeTab === "forecast" ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-panel2 hover:text-text"
               )}
             >
@@ -579,7 +579,7 @@ export function DashboardClientWorkspace({
             </button>
           </div>
           {canCustomize && activeTab !== "forecast" && !editingLayout && !editingTrends && !editingCostTrends ? (
-            <div className="flex items-center gap-1">
+            <div className="hidden items-center gap-1 sm:flex">
               <button
                 onClick={startEditLayout}
                 title={`Drag to rearrange the ${activeTab === "summary" ? "Summary" : activeTab === "trends" ? "Revenue Trend" : "Cost Trend"} visuals`}
